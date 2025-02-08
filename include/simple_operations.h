@@ -3,7 +3,8 @@
 
 #include "spreadsheet.h"
 
-// Function to handle simple operations
+// Function to handle simple operations (direct assignment or formulas).
+// When a cell is updated, all cells in its dependents list are recalculated recursively.
 void handleSimpleOperation(const char *input, Spreadsheet *spreadsheet);
 
 #endif

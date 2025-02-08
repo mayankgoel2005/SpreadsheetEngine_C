@@ -1,428 +1,209 @@
-// simple_operations.c
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
+#include <ctype.h>
 #include "simple_operations.h"
-#include "spreadsheet.h"
-#include "cell.h"
 
-//---------------------------------------------------------------------
-// Forward Declarations for Static Helper Functions
-//---------------------------------------------------------------------
-static void topoDFS_recursive(Cell *cell, bool *visited, Cell **stack, int *stackIndex, Spreadsheet *spreadsheet);
-static void topoDFS(Cell *cell, bool *visited, Cell **stack, int *stackIndex, Spreadsheet *spreadsheet);
-static bool hasCycleUtil(Cell *current, Cell *target, bool *visited, int totalCells, Spreadsheet *spreadsheet);
-static void traverseAVLCycle(Cell *node, bool *found, Cell *target, bool *visited, int totalCells, Spreadsheet *spreadsheet);
-
-//---------------------------------------------------------------------
-// AVL Tree Helper Functions (for dependency trees)
-// These functions use the cell’s own left/right pointers for AVL tree management.
-//---------------------------------------------------------------------
-static int getHeight(Cell *node) {
-    return (node == NULL) ? 0 : node->height;
-}
-
-static int maxInt(int a, int b) {
-    return (a > b) ? a : b;
-}
-
-static Cell* rightRotate(Cell *y) {
-    Cell *x = y->left;
-    Cell *T2 = x->right;
-
-    x->right = y;
-    y->left = T2;
-
-    y->height = maxInt(getHeight(y->left), getHeight(y->right)) + 1;
-    x->height = maxInt(getHeight(x->left), getHeight(x->right)) + 1;
-    return x;
-}
-
-static Cell* leftRotate(Cell *x) {
-    Cell *y = x->right;
-    Cell *T2 = y->left;
-
-    y->left = x;
-    x->right = T2;
-
-    x->height = maxInt(getHeight(x->left), getHeight(x->right)) + 1;
-    y->height = maxInt(getHeight(y->left), getHeight(y->right)) + 1;
-    return y;
-}
-
-static int getBalance(Cell *node) {
-    return (node == NULL) ? 0 : getHeight(node->left) - getHeight(node->right);
-}
-
-static int compareCells(Cell *a, Cell *b) {
-    if (a->row != b->row)
-        return a->row - b->row;
-    return a->col - b->col;
-}
-
-// Insert a cell (as a dependency) into an AVL tree rooted at 'root'.
-static Cell* avl_insert(Cell *root, Cell *node) {
-    if (root == NULL) {
-        node->left = node->right = NULL;
-        node->height = 1;
-        return node;
+// Convert an Excel-style cell reference (e.g., "A1", "AA1") to zero-based indices.
+void parseCellReference(const char *ref, int *row, int *col) {
+    *col = 0;
+    int i = 0;
+    while (isalpha(ref[i])) {
+        *col = *col * 26 + (toupper(ref[i]) - 'A' + 1);
+        i++;
     }
-    int cmp = compareCells(node, root);
-    if (cmp < 0)
-        root->left = avl_insert(root->left, node);
-    else if (cmp > 0)
-        root->right = avl_insert(root->right, node);
-    else
-        return root; // Already present.
-
-    root->height = maxInt(getHeight(root->left), getHeight(root->right)) + 1;
-    int balance = getBalance(root);
-    if (balance > 1 && compareCells(node, root->left) < 0)
-        return rightRotate(root);
-    if (balance < -1 && compareCells(node, root->right) > 0)
-        return leftRotate(root);
-    if (balance > 1 && compareCells(node, root->left) > 0) {
-        root->left = leftRotate(root->left);
-        return rightRotate(root);
-    }
-    if (balance < -1 && compareCells(node, root->right) < 0) {
-        root->right = rightRotate(root->right);
-        return leftRotate(root);
-    }
-    return root;
+    *col = *col - 1;  // Convert from 1-based to 0-based
+    *row = atoi(ref + i) - 1;  // Convert from 1-based to 0-based
 }
 
-static Cell* minValueNode(Cell *node) {
-    Cell *current = node;
-    while (current && current->left != NULL)
-        current = current->left;
-    return current;
-}
+// Remove a specific dependent from a source cell's dependents list.
+// Searches sourceCell->dependents for the pointer 'dependent' and removes it.
+void removeDependentFromSource(Cell *sourceCell, Cell *dependent) {
+    if (sourceCell->dependents == NULL || sourceCell->dependents_count == 0)
+        return;
 
-// Delete a cell (dependency) from an AVL tree rooted at 'root'.
-static Cell* avl_delete(Cell *root, Cell *node) {
-    if (root == NULL)
-        return root;
-    int cmp = compareCells(node, root);
-    if (cmp < 0)
-        root->left = avl_delete(root->left, node);
-    else if (cmp > 0)
-        root->right = avl_delete(root->right, node);
-    else {
-        if (root->left == NULL || root->right == NULL) {
-            Cell *temp = root->left ? root->left : root->right;
-            free(root);
-            return temp;
-        } else {
-            Cell *temp = minValueNode(root->right);
-            // Copy temp's data into root.
-            root->row = temp->row;
-            root->col = temp->col;
-            root->value = temp->value;
-            root->op = temp->op;
-            root->row1 = temp->row1;
-            root->col1 = temp->col1;
-            root->cell1 = temp->cell1;
-            root->row2 = temp->row2;
-            root->col2 = temp->col2;
-            root->cell2 = temp->cell2;
-            root->isLiteral1 = temp->isLiteral1;
-            root->literal1 = temp->literal1;
-            root->isLiteral2 = temp->isLiteral2;
-            root->literal2 = temp->literal2;
-            root->avlroot = temp->avlroot;
-            root->left = root->right = NULL;
-            root->right = avl_delete(root->right, temp);
+    int i;
+    for (i = 0; i < sourceCell->dependents_count; i++) {
+        if (sourceCell->dependents[i] == dependent) {
+            // Shift all later entries one position to the left.
+            int j;
+            for (j = i; j < sourceCell->dependents_count - 1; j++) {
+                sourceCell->dependents[j] = sourceCell->dependents[j + 1];
+            }
+            sourceCell->dependents_count--;
+            // Optionally, shrink the memory allocation.
+            if (sourceCell->dependents_count > 0) {
+                sourceCell->dependents = realloc(sourceCell->dependents, sizeof(Cell *) * sourceCell->dependents_count);
+            } else {
+                free(sourceCell->dependents);
+                sourceCell->dependents = NULL;
+            }
+            break;  // We found and removed the dependent; exit the loop.
         }
     }
-    if (root == NULL)
-        return root;
-    root->height = maxInt(getHeight(root->left), getHeight(root->right)) + 1;
-    int balance = getBalance(root);
-    if (balance > 1 && getBalance(root->left) >= 0)
-        return rightRotate(root);
-    if (balance > 1 && getBalance(root->left) < 0) {
-        root->left = leftRotate(root->left);
-        return rightRotate(root);
+}
+
+// Clear the dependencies list for a cell.
+// This function removes the cell (the target cell) from the dependents lists of each source cell
+// that it previously depended on, then frees its own dependencies list.
+void clearDependencies(Cell *cell) {
+    if (cell->dependencies) {
+        for (int i = 0; i < cell->dep_count; i++) {
+            Cell *source = cell->dependencies[i];
+            removeDependentFromSource(source, cell);
+        }
+        free(cell->dependencies);
+        cell->dependencies = NULL;
     }
-    if (balance < -1 && getBalance(root->right) <= 0)
-        return leftRotate(root);
-    if (balance < -1 && getBalance(root->right) > 0) {
-        root->right = rightRotate(root->right);
-        return leftRotate(root);
-    }
-    return root;
+    cell->dep_count = 0;
 }
 
-//---------------------------------------------------------------------
-// Topological Sorting for Recalculation
-//---------------------------------------------------------------------
-// We perform a DFS from the changed cell (and through its dependency tree) to collect affected cells in a stack.
-static void topoDFS_recursive(Cell *cell, bool *visited, Cell **stack, int *stackIndex, Spreadsheet *spreadsheet) {
-    if (cell == NULL)
-        return;
-    int idx = cell->row * spreadsheet->cols + cell->col;
-    if (visited[idx])
-        return;
-    visited[idx] = true;
-    // Traverse the AVL tree of dependents once.
-    if (cell->avlroot)
-        topoDFS_recursive(cell->avlroot, visited, stack, stackIndex, spreadsheet);
-    // Traverse the left and right children of this cell in the dependency tree.
-    topoDFS_recursive(cell->left, visited, stack, stackIndex, spreadsheet);
-    topoDFS_recursive(cell->right, visited, stack, stackIndex, spreadsheet);
-    // After processing dependents, push this cell on the stack.
-    stack[(*stackIndex)++] = cell;
-}
-
-static void topoDFS(Cell *cell, bool *visited, Cell **stack, int *stackIndex, Spreadsheet *spreadsheet) {
-    topoDFS_recursive(cell, visited, stack, stackIndex, spreadsheet);
-}
-
-// Recalculate affected cells in topological order.
-void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
-    int totalCells = spreadsheet->rows * spreadsheet->cols;
-    bool *visited = calloc(totalCells, sizeof(bool));
-    if (!visited) {
-        perror("Memory allocation failed in recalcUsingTopoOrder");
+// Add a dependency to the target cell: record that the target cell depends on 'source'.
+void addDependency(Cell *targetCell, Cell *source) {
+    targetCell->dependencies = realloc(targetCell->dependencies, sizeof(Cell *) * (targetCell->dep_count + 1));
+    if (!targetCell->dependencies) {
+        perror("Failed to allocate memory for dependencies");
         exit(EXIT_FAILURE);
     }
-    Cell **stack = malloc(totalCells * sizeof(Cell *));
-    if (!stack) {
-        perror("Memory allocation failed for stack in recalcUsingTopoOrder");
+    targetCell->dependencies[targetCell->dep_count++] = source;
+}
+
+// Add a dependent to a source cell: record that 'dependent' depends on this source cell.
+void addDependent(Cell *sourceCell, Cell *dependent) {
+    sourceCell->dependents = realloc(sourceCell->dependents, sizeof(Cell *) * (sourceCell->dependents_count + 1));
+    if (!sourceCell->dependents) {
+        perror("Failed to allocate memory for dependents");
         exit(EXIT_FAILURE);
     }
-    int stackIndex = 0;
-    topoDFS(start, visited, stack, &stackIndex, spreadsheet);
-    // Process the stack in reverse order.
-    for (int i = stackIndex - 1; i >= 0; i--) {
-        Cell *current = stack[i];
-        if (current->op != 0) { // Only recalc formula cells.
-            int op1 = current->isLiteral1 ? current->literal1 :
-                      spreadsheet->table[current->row1][current->col1].value;
-            int op2 = current->isLiteral2 ? current->literal2 :
-                      spreadsheet->table[current->row2][current->col2].value;
-            switch (current->op) {
-                case 1: current->value = op1 + op2; break;
-                case 2: current->value = op1 - op2; break;
-                case 3: current->value = op1 * op2; break;
-                case 4:
-                    if (op2 != 0)
-                        current->value = op1 / op2;
+    sourceCell->dependents[sourceCell->dependents_count++] = dependent;
+}
+
+// Recursively recalculate all cells that depend on the given cell.
+void recalculateDependents(Cell *cell, Spreadsheet *spreadsheet) {
+    for (int i = 0; i < cell->dependents_count; i++) {
+        Cell *dependentCell = cell->dependents[i];
+        if (dependentCell->op != 0 && dependentCell->dep_count >= 2) {  // Ensure it's a formula cell.
+            // For a binary operation, assume the first two dependencies are the operands.
+            Cell *operand1 = dependentCell->dependencies[0];
+            Cell *operand2 = dependentCell->dependencies[1];
+            switch (dependentCell->op) {
+                case 1: // Addition
+                    dependentCell->value = operand1->value + operand2->value;
+                    break;
+                case 2: // Subtraction
+                    dependentCell->value = operand1->value - operand2->value;
+                    break;
+                case 3: // Multiplication
+                    dependentCell->value = operand1->value * operand2->value;
+                    break;
+                case 4: // Division
+                    if (operand2->value != 0)
+                        dependentCell->value = operand1->value / operand2->value;
                     else {
-                        printf("Error: Division by zero in cell %c%d.\n",
-                               current->col + 'A', current->row + 1);
-                        current->value = 0;
+                        printf("Error: Division by zero while recalculating.\n");
+                        continue;
                     }
                     break;
-                default: break;
+                default:
+                    break;
             }
+            printf("Recalculated dependent cell new value: %d\n", dependentCell->value);
+            recalculateDependents(dependentCell, spreadsheet);
         }
     }
-    free(stack);
-    free(visited);
 }
 
-//---------------------------------------------------------------------
-// Cycle Detection Functions
-//---------------------------------------------------------------------
-// The dependency graph is defined by edges from an operand cell to the formula cell that depends on it.
-// A cycle exists if, starting from a cell, you can eventually reach that same cell.
-static void traverseAVLCycle(Cell *node, bool *found, Cell *target, bool *visited, int totalCells, Spreadsheet *spreadsheet) {
-    if (node == NULL || *found)
-        return;
-    if (hasCycleUtil(node, target, visited, totalCells, spreadsheet)) {
-        *found = true;
-        return;
-    }
-    traverseAVLCycle(node->left, found, target, visited, totalCells, spreadsheet);
-    traverseAVLCycle(node->right, found, target, visited, totalCells, spreadsheet);
-}
-
-static bool hasCycleUtil(Cell *current, Cell *target, bool *visited, int totalCells, Spreadsheet *spreadsheet) {
-    int idx = current->row * spreadsheet->cols + current->col;
-    if (current == target)
-        return true;
-    if (visited[idx])
-        return false;
-    visited[idx] = true;
-    bool found = false;
-    if (current->avlroot)
-        traverseAVLCycle(current->avlroot, &found, target, visited, totalCells, spreadsheet);
-    return found;
-}
-
-bool hasCycle(Cell *start, Cell *target, Spreadsheet *spreadsheet) {
-    int total = spreadsheet->rows * spreadsheet->cols;
-    bool *visited = calloc(total, sizeof(bool));
-    if (!visited) {
-        perror("Memory allocation failed in cycle detection");
-        exit(EXIT_FAILURE);
-    }
-    bool result = hasCycleUtil(start, target, visited, total, spreadsheet);
-    free(visited);
-    return result;
-}
-
-//---------------------------------------------------------------------
-// Helper: Parse a cell reference string (e.g., "A1") into row and col indices.
-//---------------------------------------------------------------------
-void parseCellReference(const char *ref, int *row, int *col) {
-    *col = ref[0] - 'A';
-    *row = atoi(ref + 1) - 1;
-}
-
-//---------------------------------------------------------------------
-// Simple Operations Handling
-//---------------------------------------------------------------------
-// For direct assignments, remove the target cell from any operand dependency trees,
-// then set the new value and recalc using topological order.
-// For formula assignments, check for cycles, update formula fields, update dependency trees,
-// and then recalc.
+// Handle simple operations (direct assignment or formulas).
+// When a cell is updated, all cells in its dependents list are recalculated recursively.
 void handleSimpleOperation(const char *input, Spreadsheet *spreadsheet) {
-    char target[4], source1[16], source2[16], opChar;
+    char targetRef[10], sourceRef1[10], sourceRef2[10], operation;
     int value;
 
-    // Direct assignment, e.g., "A1=10"
-    if (sscanf(input, "%3[^=]=%d", target, &value) == 2) {
+    // Direct assignment: e.g., "C1=40"
+    if (sscanf(input, "%9[^=]=%d", targetRef, &value) == 2) {
         int row, col;
-        parseCellReference(target, &row, &col);
+        parseCellReference(targetRef, &row, &col);
+        if (row < 0 || row >= spreadsheet->rows || col < 0 || col >= spreadsheet->cols) {
+            printf("Error: Cell reference out of bounds (%s).\n", targetRef);
+            return;
+        }
         Cell *targetCell = &spreadsheet->table[row][col];
-        if (targetCell->cell1 != NULL && targetCell->cell1->avlroot != NULL) {
-            targetCell->cell1->avlroot = avl_delete(targetCell->cell1->avlroot, targetCell);
-            targetCell->cell1 = NULL;
-        }
-        if (targetCell->cell2 != NULL && targetCell->cell2->avlroot != NULL) {
-            targetCell->cell2->avlroot = avl_delete(targetCell->cell2->avlroot, targetCell);
-            targetCell->cell2 = NULL;
-        }
+        // Clear any old formula information (and remove C1 from old sources' dependents).
+        clearDependencies(targetCell);
+        targetCell->op = 0;  // No formula; it's a direct value.
         targetCell->value = value;
-        targetCell->op = 0;
-        targetCell->row1 = targetCell->col1 = targetCell->row2 = targetCell->col2 = -1;
-        targetCell->isLiteral1 = targetCell->isLiteral2 = 0;
-        recalcUsingTopoOrder(targetCell, spreadsheet);
+        printf("Set %s to %d\n", targetRef, value);
+        // Propagate changes: recalc all cells that depend on this cell.
+        recalculateDependents(targetCell, spreadsheet);
         printSpreadsheet(spreadsheet);
         return;
     }
 
-    // Formula assignment, e.g., "C1=A1+B1"
-    if (sscanf(input, "%3[^=]=%15[^+*/-]%c%15s", target, source1, &opChar, source2) == 4) {
-        int targetRow, targetCol;
-        parseCellReference(target, &targetRow, &targetCol);
-        int row1 = -1, col1 = -1, row2 = -1, col2 = -1;
-        int isLiteral1 = 0, literal1 = 0;
-        int isLiteral2 = 0, literal2 = 0;
-
-        if (source1[0] >= 'A' && source1[0] <= 'Z')
-            parseCellReference(source1, &row1, &col1);
-        else {
-            literal1 = atoi(source1);
-            isLiteral1 = 1;
+    // Formula assignment: e.g., "C1=A1*B1" or later "C1=D1*E1"
+    if (sscanf(input, "%9[^=]=%9[^+*/-]%c%9s", targetRef, sourceRef1, &operation, sourceRef2) == 4) {
+        int targetRow, targetCol, row1, col1, row2, col2;
+        parseCellReference(targetRef, &targetRow, &targetCol);
+        parseCellReference(sourceRef1, &row1, &col1);
+        parseCellReference(sourceRef2, &row2, &col2);
+        if (targetRow < 0 || targetRow >= spreadsheet->rows ||
+            targetCol < 0 || targetCol >= spreadsheet->cols ||
+            row1 < 0 || row1 >= spreadsheet->rows ||
+            col1 < 0 || col1 >= spreadsheet->cols ||
+            row2 < 0 || row2 >= spreadsheet->rows ||
+            col2 < 0 || col2 >= spreadsheet->cols) {
+            printf("Error: One or more cell references are out of bounds.\n");
+            return;
         }
-        if (source2[0] >= 'A' && source2[0] <= 'Z')
-            parseCellReference(source2, &row2, &col2);
-        else {
-            literal2 = atoi(source2);
-            isLiteral2 = 1;
-        }
-
-        Cell *cell1 = (!isLiteral1) ? &spreadsheet->table[row1][col1] : NULL;
-        Cell *cell2 = (!isLiteral2) ? &spreadsheet->table[row2][col2] : NULL;
         Cell *targetCell = &spreadsheet->table[targetRow][targetCol];
+        Cell *cell1 = &spreadsheet->table[row1][col1];
+        Cell *cell2 = &spreadsheet->table[row2][col2];
 
-        if (targetCell->cell1 != NULL && targetCell->cell1->avlroot != NULL) {
-            targetCell->cell1->avlroot = avl_delete(targetCell->cell1->avlroot, targetCell);
-        }
-        if (targetCell->cell2 != NULL && targetCell->cell2->avlroot != NULL) {
-            targetCell->cell2->avlroot = avl_delete(targetCell->cell2->avlroot, targetCell);
-        }
+        // Clear any previous formula from the target cell.
+        // This will also remove targetCell (C1) from the dependents lists of its old dependencies (e.g., A1 and B1).
+        clearDependencies(targetCell);
 
-        if (!isLiteral1 && cell1 != NULL) {
-            if (hasCycle(targetCell, cell1, spreadsheet)) {
-                printf("Error: Cycle detected when adding dependency from cell %c%d to %c%d.\n",
-                       cell1->col + 'A', cell1->row + 1, targetCell->col + 'A', targetCell->row + 1);
-                return;
-            }
-        }
-        if (!isLiteral2 && cell2 != NULL) {
-            if (hasCycle(targetCell, cell2, spreadsheet)) {
-                printf("Error: Cycle detected when adding dependency from cell %c%d to %c%d.\n",
-                       cell2->col + 'A', cell2->row + 1, targetCell->col + 'A', targetCell->row + 1);
-                return;
-            }
-        }
-
-        switch (opChar) {
+        // Set the new formula's operator and compute the initial value.
+        switch (operation) {
             case '+':
-                if (!isLiteral1 && !isLiteral2)
-                    targetCell->value = cell1->value + cell2->value;
-                else if (isLiteral1 && !isLiteral2)
-                    targetCell->value = literal1 + cell2->value;
-                else if (!isLiteral1 && isLiteral2)
-                    targetCell->value = cell1->value + literal2;
-                else
-                    targetCell->value = literal1 + literal2;
+                targetCell->value = cell1->value + cell2->value;
                 targetCell->op = 1;
                 break;
             case '-':
-                if (!isLiteral1 && !isLiteral2)
-                    targetCell->value = cell1->value - cell2->value;
-                else if (isLiteral1 && !isLiteral2)
-                    targetCell->value = literal1 - cell2->value;
-                else if (!isLiteral1 && isLiteral2)
-                    targetCell->value = cell1->value - literal2;
-                else
-                    targetCell->value = literal1 - literal2;
+                targetCell->value = cell1->value - cell2->value;
                 targetCell->op = 2;
                 break;
             case '*':
-                if (!isLiteral1 && !isLiteral2)
-                    targetCell->value = cell1->value * cell2->value;
-                else if (isLiteral1 && !isLiteral2)
-                    targetCell->value = literal1 * cell2->value;
-                else if (!isLiteral1 && isLiteral2)
-                    targetCell->value = cell1->value * literal2;
-                else
-                    targetCell->value = literal1 * literal2;
+                targetCell->value = cell1->value * cell2->value;
                 targetCell->op = 3;
                 break;
-            case '/': {
-                int divisor = (!isLiteral2) ? cell2->value : literal2;
-                if (divisor != 0) {
-                    if (!isLiteral1 && !isLiteral2)
-                        targetCell->value = cell1->value / cell2->value;
-                    else if (isLiteral1 && !isLiteral2)
-                        targetCell->value = literal1 / cell2->value;
-                    else if (!isLiteral1 && isLiteral2)
-                        targetCell->value = cell1->value / literal2;
-                    else
-                        targetCell->value = literal1 / literal2;
+            case '/':
+                if (cell2->value != 0) {
+                    targetCell->value = cell1->value / cell2->value;
                     targetCell->op = 4;
                 } else {
                     printf("Error: Division by zero.\n");
                     return;
                 }
                 break;
-            }
             default:
-                printf("Error: Unsupported operation '%c'.\n", opChar);
+                printf("Error: Unsupported operation '%c'.\n", operation);
                 return;
         }
-        targetCell->row1 = row1; targetCell->col1 = col1;
-        targetCell->isLiteral1 = isLiteral1; targetCell->literal1 = literal1;
-        targetCell->row2 = row2; targetCell->col2 = col2;
-        targetCell->isLiteral2 = isLiteral2; targetCell->literal2 = literal2;
-        targetCell->cell1 = cell1; targetCell->cell2 = cell2;
 
-        if (!isLiteral1 && cell1 != NULL)
-            cell1->avlroot = avl_insert(cell1->avlroot, targetCell);
-        if (!isLiteral2 && cell2 != NULL)
-            cell2->avlroot = avl_insert(cell2->avlroot, targetCell);
+        // Establish the new dependency relationship:
+        // 1. Record that targetCell (e.g., C1) depends on cell1 and cell2.
+        addDependency(targetCell, cell1);
+        addDependency(targetCell, cell2);
+        // 2. Record that cell1 and cell2 have targetCell as a dependent.
+        addDependent(cell1, targetCell);
+        addDependent(cell2, targetCell);
 
-        recalcUsingTopoOrder(targetCell, spreadsheet);
+        printf("Performed operation %s=%s%c%s, result: %d\n", targetRef, sourceRef1, operation, sourceRef2, targetCell->value);
+        // Propagate changes: update any cells that depend on targetCell.
+        recalculateDependents(targetCell, spreadsheet);
         printSpreadsheet(spreadsheet);
         return;
     }
+
     printf("Error: Invalid input '%s'.\n", input);
 }
