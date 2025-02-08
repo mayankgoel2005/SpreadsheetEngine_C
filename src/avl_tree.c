@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
-
+#include "cell.h"
 int avl_height(AVLNode *node) {
     return node ? node->height : 0;
 }
@@ -156,6 +156,7 @@ AVLNode* avl_find(AVLNode *root, struct Cell *cell, int (*cmp)(struct Cell*, str
 
 void avl_traverse(AVLNode *root, void (*callback)(struct Cell*, void*), void *data) {
     if (root) {
+        printf("%d\n",root->cell->value);
         avl_traverse(root->left, callback, data);
         callback(root->cell, data);
         avl_traverse(root->right, callback, data);

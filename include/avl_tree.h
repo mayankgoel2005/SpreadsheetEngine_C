@@ -1,6 +1,5 @@
 #ifndef AVL_TREE_H
 #define AVL_TREE_H
-
 #include <stddef.h>
 
 // Forward declaration for Cell.

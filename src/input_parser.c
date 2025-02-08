@@ -6,11 +6,11 @@
 #include "input_parser.h"
 #include "spreadsheet.h"
 #include "simple_operations.h"
-#include "scrolling.h"  // if you have scrolling functions defined elsewhere
+#include "scrolling.h"  
 
-// Function to parse and handle user input.
+// function to parse and handle user input.
 int parseInput(char *input, Spreadsheet *spreadsheet) {
-    // Remove trailing newline.
+
     input[strcspn(input, "\n")] = '\0';
 
     // Exit command.
@@ -38,8 +38,8 @@ int parseInput(char *input, Spreadsheet *spreadsheet) {
         return 1;
     }
 
-    // Otherwise, assume it's a cell operation.
-    handleSimpleOperation(input, spreadsheet);
+
+    handleOperation(input, spreadsheet);
 
     return 1;
 }
