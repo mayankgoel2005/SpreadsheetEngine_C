@@ -3,6 +3,10 @@
 #include <string.h>
 #include <ctype.h>
 #include "simple_operations.h"
+#include "avl_tree.h"
+
+// Forward declaration of recalculateDependents so that it can be used in callbacks.
+void recalculateDependents(Cell *cell, Spreadsheet *spreadsheet);
 
 // Convert an Excel-style cell reference (e.g., "A1", "AA1") to zero-based indices.
 void parseCellReference(const char *ref, int *row, int *col) {
@@ -16,105 +20,87 @@ void parseCellReference(const char *ref, int *row, int *col) {
     *row = atoi(ref + i) - 1;  // Convert from 1-based to 0-based
 }
 
-// Remove a specific dependent from a source cell's dependents list.
-// Searches sourceCell->dependents for the pointer 'dependent' and removes it.
-void removeDependentFromSource(Cell *sourceCell, Cell *dependent) {
-    if (sourceCell->dependents == NULL || sourceCell->dependents_count == 0)
-        return;
-
-    int i;
-    for (i = 0; i < sourceCell->dependents_count; i++) {
-        if (sourceCell->dependents[i] == dependent) {
-            // Shift all later entries one position to the left.
-            int j;
-            for (j = i; j < sourceCell->dependents_count - 1; j++) {
-                sourceCell->dependents[j] = sourceCell->dependents[j + 1];
-            }
-            sourceCell->dependents_count--;
-            // Optionally, shrink the memory allocation.
-            if (sourceCell->dependents_count > 0) {
-                sourceCell->dependents = realloc(sourceCell->dependents, sizeof(Cell *) * sourceCell->dependents_count);
-            } else {
-                free(sourceCell->dependents);
-                sourceCell->dependents = NULL;
-            }
-            break;  // We found and removed the dependent; exit the loop.
-        }
-    }
+// Callback used during traversal to remove a dependent from a source cell's dependents tree.
+void remove_dependent_callback(struct Cell *source, void *target_ptr) {
+    struct Cell *target = (struct Cell *) target_ptr;
+    source->dependents = avl_delete(source->dependents, target, avl_cell_compare);
 }
 
-// Clear the dependencies list for a cell.
-// This function removes the cell (the target cell) from the dependents lists of each source cell
-// that it previously depended on, then frees its own dependencies list.
+// Clear the dependencies AVL tree for a cell.
+// For every source in the tree, remove this cell from that source’s dependents.
 void clearDependencies(Cell *cell) {
     if (cell->dependencies) {
-        for (int i = 0; i < cell->dep_count; i++) {
-            Cell *source = cell->dependencies[i];
-            removeDependentFromSource(source, cell);
-        }
-        free(cell->dependencies);
+        avl_traverse(cell->dependencies, remove_dependent_callback, cell);
+        avl_free(cell->dependencies);
         cell->dependencies = NULL;
     }
-    cell->dep_count = 0;
 }
 
-// Add a dependency to the target cell: record that the target cell depends on 'source'.
+// Insert a dependency: record that targetCell depends on source.
 void addDependency(Cell *targetCell, Cell *source) {
-    targetCell->dependencies = realloc(targetCell->dependencies, sizeof(Cell *) * (targetCell->dep_count + 1));
-    if (!targetCell->dependencies) {
-        perror("Failed to allocate memory for dependencies");
-        exit(EXIT_FAILURE);
-    }
-    targetCell->dependencies[targetCell->dep_count++] = source;
+    targetCell->dependencies = avl_insert(targetCell->dependencies, source, avl_cell_compare);
 }
 
-// Add a dependent to a source cell: record that 'dependent' depends on this source cell.
+// Insert a dependent: record that sourceCell has dependent.
 void addDependent(Cell *sourceCell, Cell *dependent) {
-    sourceCell->dependents = realloc(sourceCell->dependents, sizeof(Cell *) * (sourceCell->dependents_count + 1));
-    if (!sourceCell->dependents) {
-        perror("Failed to allocate memory for dependents");
-        exit(EXIT_FAILURE);
-    }
-    sourceCell->dependents[sourceCell->dependents_count++] = dependent;
+    sourceCell->dependents = avl_insert(sourceCell->dependents, dependent, avl_cell_compare);
 }
 
-// Recursively recalculate all cells that depend on the given cell.
-void recalculateDependents(Cell *cell, Spreadsheet *spreadsheet) {
-    for (int i = 0; i < cell->dependents_count; i++) {
-        Cell *dependentCell = cell->dependents[i];
-        if (dependentCell->op != 0 && dependentCell->dep_count >= 2) {  // Ensure it's a formula cell.
-            // For a binary operation, assume the first two dependencies are the operands.
-            Cell *operand1 = dependentCell->dependencies[0];
-            Cell *operand2 = dependentCell->dependencies[1];
-            switch (dependentCell->op) {
+// Helper structure to collect up to two operands from a cell's dependencies tree.
+typedef struct {
+    Cell *operands[2];
+    int count;
+} OperandCollector;
+
+// Callback to collect operands from the dependencies AVL tree.
+void collect_operands_callback(Cell *cell, void *data) {
+    OperandCollector *collector = (OperandCollector *) data;
+    if (collector->count < 2) {
+        collector->operands[collector->count] = cell;
+        collector->count++;
+    }
+}
+
+// Callback for recalc traversal of dependents.
+void recalc_callback(Cell *dependent, void *spreadsheet_ptr) {
+    Spreadsheet *spreadsheet = (Spreadsheet *) spreadsheet_ptr;
+    if (dependent->op != 0) {
+        OperandCollector collector = { .operands = {NULL, NULL}, .count = 0 };
+        avl_traverse(dependent->dependencies, collect_operands_callback, &collector);
+        if (collector.count >= 2 && collector.operands[0] && collector.operands[1]) {
+            switch (dependent->op) {
                 case 1: // Addition
-                    dependentCell->value = operand1->value + operand2->value;
+                    dependent->value = collector.operands[0]->value + collector.operands[1]->value;
                     break;
                 case 2: // Subtraction
-                    dependentCell->value = operand1->value - operand2->value;
+                    dependent->value = collector.operands[0]->value - collector.operands[1]->value;
                     break;
                 case 3: // Multiplication
-                    dependentCell->value = operand1->value * operand2->value;
+                    dependent->value = collector.operands[0]->value * collector.operands[1]->value;
                     break;
                 case 4: // Division
-                    if (operand2->value != 0)
-                        dependentCell->value = operand1->value / operand2->value;
+                    if (collector.operands[1]->value != 0)
+                        dependent->value = collector.operands[0]->value / collector.operands[1]->value;
                     else {
                         printf("Error: Division by zero while recalculating.\n");
-                        continue;
+                        return;
                     }
                     break;
                 default:
                     break;
             }
-            printf("Recalculated dependent cell new value: %d\n", dependentCell->value);
-            recalculateDependents(dependentCell, spreadsheet);
+            printf("Recalculated dependent cell new value: %d\n", dependent->value);
         }
+        recalculateDependents(dependent, spreadsheet);
     }
 }
 
+// Recursively recalculate all cells that depend on the given cell.
+void recalculateDependents(Cell *cell, Spreadsheet *spreadsheet) {
+    avl_traverse(cell->dependents, recalc_callback, spreadsheet);
+}
+
 // Handle simple operations (direct assignment or formulas).
-// When a cell is updated, all cells in its dependents list are recalculated recursively.
 void handleSimpleOperation(const char *input, Spreadsheet *spreadsheet) {
     char targetRef[10], sourceRef1[10], sourceRef2[10], operation;
     int value;
@@ -128,12 +114,11 @@ void handleSimpleOperation(const char *input, Spreadsheet *spreadsheet) {
             return;
         }
         Cell *targetCell = &spreadsheet->table[row][col];
-        // Clear any old formula information (and remove C1 from old sources' dependents).
+        // Clear old formula info and remove targetCell from old sources' dependents trees.
         clearDependencies(targetCell);
-        targetCell->op = 0;  // No formula; it's a direct value.
+        targetCell->op = 0;  // Direct assignment.
         targetCell->value = value;
         printf("Set %s to %d\n", targetRef, value);
-        // Propagate changes: recalc all cells that depend on this cell.
         recalculateDependents(targetCell, spreadsheet);
         printSpreadsheet(spreadsheet);
         return;
@@ -158,11 +143,10 @@ void handleSimpleOperation(const char *input, Spreadsheet *spreadsheet) {
         Cell *cell1 = &spreadsheet->table[row1][col1];
         Cell *cell2 = &spreadsheet->table[row2][col2];
 
-        // Clear any previous formula from the target cell.
-        // This will also remove targetCell (C1) from the dependents lists of its old dependencies (e.g., A1 and B1).
+        // Clear any previous formula (and remove targetCell from its old dependencies' dependents).
         clearDependencies(targetCell);
 
-        // Set the new formula's operator and compute the initial value.
+        // Set the new formula operator and compute the initial value.
         switch (operation) {
             case '+':
                 targetCell->value = cell1->value + cell2->value;
@@ -190,8 +174,8 @@ void handleSimpleOperation(const char *input, Spreadsheet *spreadsheet) {
                 return;
         }
 
-        // Establish the new dependency relationship:
-        // 1. Record that targetCell (e.g., C1) depends on cell1 and cell2.
+        // Establish new dependency relationships:
+        // 1. Record that targetCell depends on cell1 and cell2.
         addDependency(targetCell, cell1);
         addDependency(targetCell, cell2);
         // 2. Record that cell1 and cell2 have targetCell as a dependent.
@@ -199,7 +183,6 @@ void handleSimpleOperation(const char *input, Spreadsheet *spreadsheet) {
         addDependent(cell2, targetCell);
 
         printf("Performed operation %s=%s%c%s, result: %d\n", targetRef, sourceRef1, operation, sourceRef2, targetCell->value);
-        // Propagate changes: update any cells that depend on targetCell.
         recalculateDependents(targetCell, spreadsheet);
         printSpreadsheet(spreadsheet);
         return;
