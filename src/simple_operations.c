@@ -22,19 +22,20 @@ void recalc_callback(Cell *dependent, void *spreadsheet_ptr);
 void recalculateDependents(Cell *cell, Spreadsheet *spreadsheet) {
     avl_traverse(cell->dependents, recalc_callback, spreadsheet);
 }
+static void remove_dependent_callback(Cell *source, void *target_ptr) {
+    Cell *target = (Cell *) target_ptr;
+    source->dependents = avl_delete(source->dependents, target, avl_cell_compare);
+}
 
 // for every source cell in dependencies tree removed this cell from its dependents tree.
 void clearDependencies(Cell *cell) {
     if (cell->dependencies) {
-        void remove_dependent_callback(Cell *source, void *target_ptr) {
-            Cell *target = (Cell *) target_ptr;
-            source->dependents = avl_delete(source->dependents, target, avl_cell_compare);
-        }
         avl_traverse(cell->dependencies, remove_dependent_callback, cell);
         avl_free(cell->dependencies);
         cell->dependencies = NULL;
     }
 }
+
 
 void addDependency(Cell *targetCell, Cell *source) {
     targetCell->dependencies = avl_insert(targetCell->dependencies, source, avl_cell_compare);
