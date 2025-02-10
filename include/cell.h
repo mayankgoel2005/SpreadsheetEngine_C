@@ -1,26 +1,30 @@
 #ifndef CELL_H
 #define CELL_H
 
-#include "avl_tree.h"
+#include "avl_tree.h"  // If needed, include any dependencies
 
 typedef struct Cell {
-    int row, col;         // Cell position (zero-based)
-    int value;            // Current cell value
-    int op;               // Operation code:
-                          // 0 = constant,
-                          // 1 = addition, 2 = subtraction, 3 = multiplication, 4 = division,
-                          // 5 = SUM, 6 = MIN, 7 = MAX, 8 = AVG, 9 = STDEV (advanced operations)
-    // For simple formulas, these hold the two operand cell references.
-    // For advanced formulas, we use them to store the range boundaries (top-left and bottom-right).
-    int row1, col1, row2, col2;
-
-    // Dependency AVL trees (using your AVL tree implementation)
-    AVLNode *dependencies; // AVL tree of pointers to cells this cell depends on.
-    AVLNode *dependents;   // AVL tree of pointers to cells that depend on this cell.
+    int value;
+    int op;  // 0 means direct assignment; other values represent formulas
+    int row1, col1, row2, col2; // For advanced operations (range boundaries)
+    
+    // Pointers for dependency management (using AVLNode pointers)
+    AVLNode *dependencies;
+    AVLNode *dependents;
+    
+    // --- Fields for supporting mixed operands in simple operations ---
+    int operand1IsLiteral;   // 1 if operand1 is literal; 0 if it’s a cell reference.
+    int operand1Literal;     // Literal value for operand1 if operand1IsLiteral is 1.
+    struct Cell *operand1;   // Pointer to the cell for operand1 if not a literal.
+    
+    int operand2IsLiteral;   // 1 if operand2 is literal.
+    int operand2Literal;     
+    struct Cell *operand2;
+    
 } Cell;
 
+// Prototypes for functions related to a Cell.
 void initCell(Cell *cell);
 void freeCell(Cell *cell);
-void parseCellReference(const char *ref, int *row, int *col);
 
 #endif // CELL_H

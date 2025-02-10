@@ -6,44 +6,17 @@
 #include <limits.h>
 #include "cell.h"
 #include "spreadsheet.h"
-#include "avl_tree.h"
+#include "avl_tree.h"       
 #include "simple_operations.h"
 
-// advanced op codes:
+// Advanced operation codes.
 #define OP_ADV_SUM    5
 #define OP_ADV_MIN    6
 #define OP_ADV_MAX    7
 #define OP_ADV_AVG    8
 #define OP_ADV_STDEV  9
 
-void recalc_callback(Cell *dependent, void *spreadsheet_ptr);
-
-// recalc dependents by traversing the dependents AVL tree.
-void recalculateDependents(Cell *cell, Spreadsheet *spreadsheet) {
-    avl_traverse(cell->dependents, recalc_callback, spreadsheet);
-}
-static void remove_dependent_callback(Cell *source, void *target_ptr) {
-    Cell *target = (Cell *) target_ptr;
-    source->dependents = avl_delete(source->dependents, target, avl_cell_compare);
-}
-
-// for every source cell in dependencies tree removed this cell from its dependents tree.
-void clearDependencies(Cell *cell) {
-    if (cell->dependencies) {
-        avl_traverse(cell->dependencies, remove_dependent_callback, cell);
-        avl_free(cell->dependencies);
-        cell->dependencies = NULL;
-    }
-}
-
-
-void addDependency(Cell *targetCell, Cell *source) {
-    targetCell->dependencies = avl_insert(targetCell->dependencies, source, avl_cell_compare);
-}
-
-void addDependent(Cell *sourceCell, Cell *target) {
-    sourceCell->dependents = avl_insert(sourceCell->dependents, target, avl_cell_compare);
-}
+void parseCellReference(const char *ref, int *row, int *col);
 
 typedef struct {
     Cell *operands[2];
@@ -58,16 +31,37 @@ static void collect_operands_callback(Cell *cell, void *data) {
     }
 }
 
-// recalculation callback that updates dependent cell’s value.
-void recalc_callback(Cell *dependent, void *spreadsheet_ptr) {
-    Spreadsheet *spreadsheet = (Spreadsheet *) spreadsheet_ptr;
-    if (dependent->op != 0) {
-        // advanced ops
-        if (dependent->op >= OP_ADV_SUM && dependent->op <= OP_ADV_STDEV) {
-            int rStart = dependent->row1;
-            int cStart = dependent->col1;
-            int rEnd = dependent->row2;
-            int cEnd = dependent->col2;
+// Callback used by clearDependencies() to remove the target cell from each dependency’s dependents tree.
+static void remove_dependent_callback(Cell *source, void *target_ptr) {
+    Cell *target = (Cell *) target_ptr;
+    source->dependents = avl_delete(source->dependents, target, avl_cell_compare);
+}
+
+// For every cell in the dependency tree, remove this cell from its dependents tree.
+void clearDependencies(Cell *cell) {
+    if (cell->dependencies) {
+        avl_traverse(cell->dependencies, remove_dependent_callback, cell);
+        avl_free(cell->dependencies);
+        cell->dependencies = NULL;
+    }
+}
+
+void addDependency(Cell *targetCell, Cell *source) {
+    targetCell->dependencies = avl_insert(targetCell->dependencies, source, avl_cell_compare);
+}
+
+void addDependent(Cell *sourceCell, Cell *target) {
+    sourceCell->dependents = avl_insert(sourceCell->dependents, target, avl_cell_compare);
+}
+
+void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
+    if (cell->op != 0) {
+        // Advanced operations
+        if (cell->op >= OP_ADV_SUM && cell->op <= OP_ADV_STDEV) {
+            int rStart = cell->row1;
+            int cStart = cell->col1;
+            int rEnd = cell->row2;
+            int cEnd = cell->col2;
             long sum = 0;
             int count = 0;
             int minVal = INT_MAX;
@@ -82,7 +76,7 @@ void recalc_callback(Cell *dependent, void *spreadsheet_ptr) {
                 }
             }
             int result = 0;
-            switch (dependent->op) {
+            switch (cell->op) {
                 case OP_ADV_SUM:
                     result = (int) sum;
                     break;
@@ -111,26 +105,27 @@ void recalc_callback(Cell *dependent, void *spreadsheet_ptr) {
                 default:
                     break;
             }
-            dependent->value = result;
-            printf("Recalculated advanced formula cell new value: %d\n", dependent->value);
-        } else {
-            //simple ops
+            cell->value = result;
+            printf("Recalculated advanced formula cell new value: %d\n", cell->value);
+        }
+        // Simple operations
+        else {
             OperandCollector collector = { .operands = {NULL, NULL}, .count = 0 };
-            avl_traverse(dependent->dependencies, collect_operands_callback, &collector);
+            avl_traverse(cell->dependencies, collect_operands_callback, &collector);
             if (collector.count >= 2 && collector.operands[0] && collector.operands[1]) {
-                switch (dependent->op) {
+                switch (cell->op) {
                     case 1:
-                        dependent->value = collector.operands[0]->value + collector.operands[1]->value;
+                        cell->value = collector.operands[0]->value + collector.operands[1]->value;
                         break;
                     case 2:
-                        dependent->value = collector.operands[0]->value - collector.operands[1]->value;
+                        cell->value = collector.operands[0]->value - collector.operands[1]->value;
                         break;
                     case 3:
-                        dependent->value = collector.operands[0]->value * collector.operands[1]->value;
+                        cell->value = collector.operands[0]->value * collector.operands[1]->value;
                         break;
                     case 4:
                         if (collector.operands[1]->value != 0)
-                            dependent->value = collector.operands[0]->value / collector.operands[1]->value;
+                            cell->value = collector.operands[0]->value / collector.operands[1]->value;
                         else {
                             printf("Error: Division by zero in simple formula recalculation.\n");
                             return;
@@ -139,24 +134,176 @@ void recalc_callback(Cell *dependent, void *spreadsheet_ptr) {
                     default:
                         break;
                 }
-                printf("Recalculated simple formula cell new value: %d\n", dependent->value);
+                printf("Recalculated simple formula cell new value: %d\n", cell->value);
             }
         }
-        recalculateDependents(dependent, spreadsheet);
     }
 }
 
-// A simple topological recalculation (this example uses recursive propagation)
+int findAffectedIndex(Cell **arr, int count, Cell *cell) {
+    for (int i = 0; i < count; i++) {
+        if (arr[i] == cell)
+            return i;
+    }
+    return -1;
+}
+
+typedef struct {
+    Cell **queue;
+    int *queueSize;
+    int *queueCapacity;
+    AVLNode **visited; 
+} BFSQueueData;
+
+void enqueue_cell(Cell *cell, BFSQueueData *data) {
+    if (avl_find(*(data->visited), cell, avl_cell_compare))
+        return;
+    *(data->visited) = avl_insert(*(data->visited), cell, avl_cell_compare);
+    if (*(data->queueSize) >= *(data->queueCapacity)) {
+        *(data->queueCapacity) *= 2;
+        data->queue = realloc(data->queue, (*(data->queueCapacity)) * sizeof(Cell *));
+    }
+    data->queue[*(data->queueSize)] = cell;
+    (*(data->queueSize))++;
+}
+
+void bfs_enqueue_callback(Cell *cell, void *data) {
+    BFSQueueData *bfsData = (BFSQueueData *) data;
+    enqueue_cell(cell, bfsData);
+}
+
+typedef struct {
+    Cell **affected;
+    int affectedCount;
+    int targetIndex;
+    int *inDegree;
+} DepCallbackData;
+
+void dep_check_callback(Cell *dep, void *data) {
+    DepCallbackData *dData = (DepCallbackData *) data;
+    int idx = findAffectedIndex(dData->affected, dData->affectedCount, dep);
+    if (idx != -1) {
+        dData->inDegree[dData->targetIndex]++;
+    }
+}
+
+typedef struct {
+    Cell **affected;
+    int affectedCount;
+    int *inDegree;
+    int *zeroQueue;  
+    int *zeroQueueSize;
+} ProcessDepData;
+
+void process_dependent_callback(Cell *dep, void *data) {
+    ProcessDepData *pData = (ProcessDepData *) data;
+    int idx = findAffectedIndex(pData->affected, pData->affectedCount, dep);
+    if (idx != -1) {
+        pData->inDegree[idx]--;
+        if (pData->inDegree[idx] == 0) {
+            pData->zeroQueue[*(pData->zeroQueueSize)] = idx;
+            (*(pData->zeroQueueSize))++;
+        }
+    }
+}
+
 void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
-    recalculateDependents(start, spreadsheet);
+    int queueCapacity = 100;
+    int queueSize = 0;
+    Cell **queue = malloc(queueCapacity * sizeof(Cell *));
+    
+    int affectedCapacity = 100;
+    int affectedCount = 0;
+    Cell **affected = malloc(affectedCapacity * sizeof(Cell *));
+    
+    AVLNode *visited = NULL; 
+    BFSQueueData bfsData;
+    bfsData.queue = queue;
+    bfsData.queueSize = &queueSize;
+    bfsData.queueCapacity = &queueCapacity;
+    bfsData.visited = &visited;
+    
+    if (start->dependents) {
+        avl_traverse(start->dependents, bfs_enqueue_callback, &bfsData);
+    }
+    
+    int front = 0;
+    while (front < queueSize) {
+        Cell *curr = queue[front++];
+        if (affectedCount >= affectedCapacity) {
+            affectedCapacity *= 2;
+            affected = realloc(affected, affectedCapacity * sizeof(Cell *));
+        }
+        affected[affectedCount++] = curr;
+        if (curr->dependents) {
+            avl_traverse(curr->dependents, bfs_enqueue_callback, &bfsData);
+        }
+    }
+    free(queue);
+    if (visited) {
+        avl_free(visited);
+    }
+
+    int *inDegree = malloc(affectedCount * sizeof(int));
+    for (int i = 0; i < affectedCount; i++) {
+        inDegree[i] = 0;
+        if (affected[i]->dependencies) {
+            DepCallbackData depData;
+            depData.affected = affected;
+            depData.affectedCount = affectedCount;
+            depData.targetIndex = i;
+            depData.inDegree = inDegree;
+            avl_traverse(affected[i]->dependencies, dep_check_callback, &depData);
+        }
+    }
+    
+    int *zeroQueue = malloc(affectedCount * sizeof(int));
+    int zeroQueueSize = 0;
+    int zeroQueueFront = 0;
+    for (int i = 0; i < affectedCount; i++) {
+        if (inDegree[i] == 0)
+            zeroQueue[zeroQueueSize++] = i;
+    }
+    
+    int processedCount = 0;
+    ProcessDepData pData;
+    pData.affected = affected;
+    pData.affectedCount = affectedCount;
+    pData.inDegree = inDegree;
+    pData.zeroQueue = zeroQueue;
+    pData.zeroQueueSize = &zeroQueueSize;
+    
+    while (zeroQueueFront < zeroQueueSize) {
+        int idx = zeroQueue[zeroQueueFront++];
+        Cell *cell = affected[idx];
+        recalc_cell(cell, spreadsheet);
+        processedCount++;
+        if (cell->dependents)
+            avl_traverse(cell->dependents, process_dependent_callback, &pData);
+    }
+    
+    if (processedCount != affectedCount) {
+        printf("Error: Cycle detected in dependencies. Recalculation aborted.\n");
+        free(affected);
+        free(inDegree);
+        free(zeroQueue);
+        return;
+    }
+    
+    free(affected);
+    free(inDegree);
+    free(zeroQueue);
 }
 
 void handleOperation(const char *input, Spreadsheet *spreadsheet) {
-    // check if the input contains a '('
+    // Check if the input contains a '('
     if (strchr(input, '(') != NULL) {
-        //advanced op
         char targetRef[10], opStr[10], rangeStr[30];
-        if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])", targetRef, opStr, rangeStr) != 3) {
+        char extra[100];
+        if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])%9s", targetRef, opStr, rangeStr, extra) == 4) {
+            printf("Error: Invalid input format, unexpected characters found after function.\n");
+            return;
+        } else if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])", targetRef, opStr, rangeStr) != 3) {
             printf("Error: Invalid advanced formula format.\n");
             return;
         }
@@ -231,13 +378,13 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
         clearDependencies(targetCell);
         targetCell->op = opCode;
         targetCell->value = result;
-        //range boundaries
+        // Save the range boundaries.
         targetCell->row1 = rStart;
         targetCell->col1 = cStart;
         targetCell->row2 = rEnd;
         targetCell->col2 = cEnd;
         printf("Performed advanced operation %s on range %s, result: %d\n", opStr, rangeStr, result);
-        //set up dependencies
+        // Set up dependencies
         for (int r = rStart; r <= rEnd; r++) {
             for (int c = cStart; c <= cEnd; c++) {
                 Cell *source = &spreadsheet->table[r][c];
@@ -248,23 +395,14 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
         recalcUsingTopoOrder(targetCell, spreadsheet);
         printSpreadsheet(spreadsheet);
     } else {
-        //Simple Operation
-        char targetRef[10], sourceRef1[10], sourceRef2[10], opChar;
+        // Simple Operation 
+        char extra[100];
+        char targetRef[10], sourceRef1[10], sourceRef2[10];
+        char opChar;
         int value;
-        if (sscanf(input, "%9[^=]=%d", targetRef, &value) == 2) {
-            int row, col;
-            parseCellReference(targetRef, &row, &col);
-            if (row < 0 || row >= spreadsheet->rows || col < 0 || col >= spreadsheet->cols) {
-                printf("Error: Cell reference out of bounds (%s).\n", targetRef);
-                return;
-            }
-            Cell *targetCell = &spreadsheet->table[row][col];
-            clearDependencies(targetCell);
-            targetCell->op = 0;
-            targetCell->value = value;
-            printf("Set %s to %d\n", targetRef, value);
-            recalcUsingTopoOrder(targetCell, spreadsheet);
-            printSpreadsheet(spreadsheet);
+        if (sscanf(input, "%9[^=]=%9[^+*/-]%c%9s%9s", targetRef, sourceRef1, &opChar, sourceRef2, extra) == 5) {
+            printf("Error: Invalid input format, unexpected characters found after operation.\n");
+            return;
         } else if (sscanf(input, "%9[^=]=%9[^+*/-]%c%9s", targetRef, sourceRef1, &opChar, sourceRef2) == 4) {
             int targetRow, targetCol, row1, col1, row2, col2;
             parseCellReference(targetRef, &targetRow, &targetCol);
@@ -320,8 +458,25 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
             printf("Performed operation %s=%s%c%s, result: %d\n", targetRef, sourceRef1, opChar, sourceRef2, targetCell->value);
             recalcUsingTopoOrder(targetCell, spreadsheet);
             printSpreadsheet(spreadsheet);
+        } else if (sscanf(input, "%9[^=]=%d%9s", targetRef, &value, extra) == 3) {
+            printf("Error: Invalid input format, unexpected characters found after value.\n");
+            return;
+        } else if (sscanf(input, "%9[^=]=%d", targetRef, &value) == 2) {
+            int row, col;
+            parseCellReference(targetRef, &row, &col);
+            if (row < 0 || row >= spreadsheet->rows || col < 0 || col >= spreadsheet->cols) {
+                printf("Error: Cell reference out of bounds (%s).\n", targetRef);
+                return;
+            }
+            Cell *targetCell = &spreadsheet->table[row][col];
+            clearDependencies(targetCell);
+            targetCell->op = 0;
+            targetCell->value = value;
+            printf("Set %s to %d\n", targetRef, value);
+            recalcUsingTopoOrder(targetCell, spreadsheet);
+            printSpreadsheet(spreadsheet);
         } else {
-            printf("Error: Invalid input '%s'.\n", input);
+            printf("(unrecognized cmd) ");
         }
     }
 }

@@ -1,10 +1,10 @@
 #include <stdio.h>
 #include "scrolling.h"
 
-// Scroll up by 5 rows
+// Scroll up by 10 rows
 void scrollUp(Spreadsheet *spreadsheet) {
     if (spreadsheet->startRow > 0) {
-        spreadsheet->startRow -= 5;
+        spreadsheet->startRow -= 10;
         if (spreadsheet->startRow < 0) {
             spreadsheet->startRow = 0;
         }
@@ -12,10 +12,10 @@ void scrollUp(Spreadsheet *spreadsheet) {
     printf("Scrolled up.\n");
 }
 
-// Scroll down by 5 rows
+// Scroll down by 10 rows
 void scrollDown(Spreadsheet *spreadsheet) {
     if (spreadsheet->startRow + 10 < spreadsheet->rows) {
-        spreadsheet->startRow += 5;
+        spreadsheet->startRow += 10;
         if (spreadsheet->startRow + 10 > spreadsheet->rows) {
             spreadsheet->startRow = spreadsheet->rows - 10;
         }
@@ -23,10 +23,10 @@ void scrollDown(Spreadsheet *spreadsheet) {
     printf("Scrolled down.\n");
 }
 
-// Scroll left by 5 columns
+// Scroll left by 10 columns
 void scrollLeft(Spreadsheet *spreadsheet) {
     if (spreadsheet->startCol > 0) {
-        spreadsheet->startCol -= 5;
+        spreadsheet->startCol -= 10;
         if (spreadsheet->startCol < 0) {
             spreadsheet->startCol = 0;
         }
@@ -34,10 +34,10 @@ void scrollLeft(Spreadsheet *spreadsheet) {
     printf("Scrolled left.\n");
 }
 
-// Scroll right by 5 columns
+// Scroll right by 10 columns
 void scrollRight(Spreadsheet *spreadsheet) {
     if (spreadsheet->startCol + 10 < spreadsheet->cols) {
-        spreadsheet->startCol += 5;
+        spreadsheet->startCol += 10;
         if (spreadsheet->startCol + 10 > spreadsheet->cols) {
             spreadsheet->startCol = spreadsheet->cols - 10;
         }

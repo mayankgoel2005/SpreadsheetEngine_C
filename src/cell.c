@@ -2,20 +2,25 @@
 #include <stdio.h>
 #include <ctype.h>  
 #include "cell.h"
+#include "avl_tree.h"  // If you use functions like avl_free
 
-// initialized a cell.
 void initCell(Cell *cell) {
-    cell->op = 0;
     cell->value = 0;
-    // Initialize the formula operands / range boundaries to invalid values.
+    cell->op = 0;
     cell->row1 = cell->col1 = cell->row2 = cell->col2 = -1;
-    // Set dependency trees to NULL.
     cell->dependencies = NULL;
     cell->dependents = NULL;
+    cell->operand1IsLiteral = 0;
+    cell->operand1Literal = 0;
+    cell->operand1 = NULL;
+    cell->operand2IsLiteral = 0;
+    cell->operand2Literal = 0;
+    cell->operand2 = NULL;
 }
 
-// freed dynamically allocated memory for dependency trees.
 void freeCell(Cell *cell) {
+    // If your cell allocates dynamic memory for dependencies/dependents,
+    // free them here. For example:
     if (cell->dependencies) {
         avl_free(cell->dependencies);
         cell->dependencies = NULL;
@@ -24,7 +29,9 @@ void freeCell(Cell *cell) {
         avl_free(cell->dependents);
         cell->dependents = NULL;
     }
+    // If no other dynamic memory is allocated inside Cell, nothing else is needed.
 }
+
 
 // convert a reference to row and column indices.
 void parseCellReference(const char *ref, int *row, int *col) {

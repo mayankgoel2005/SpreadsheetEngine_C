@@ -13,11 +13,17 @@ int main(int argc, char *argv[]) {
 
     int rows = atoi(argv[1]);
     int cols = atoi(argv[2]);
-
-    if (rows <= 0 || cols <= 0) {
-        printf("Error: Rows and columns must be positive integers.\n");
+    if (rows >= 1000 || rows <= 0)
+    {
+        printf("Error: Rows should be in the range 1 to 1000 inclusive");
         return 1;
     }
+    if (cols >= 18279 || cols <= 0)
+    {
+        printf("Error: Cols should be in the range 1 to 18278 inclusive");
+        return 1;
+    }
+    
 
     Spreadsheet *spreadsheet = initializeSpreadsheet(rows, cols);
 
@@ -28,7 +34,7 @@ int main(int argc, char *argv[]) {
     while (1) {
         printf("> ");
         if (!fgets(input, sizeof(input), stdin)) {
-            printf("\nError reading input.\n");
+            printf("( unrecognized cmd ) ");
             break;
         }
 
