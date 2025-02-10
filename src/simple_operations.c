@@ -92,6 +92,7 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
         else if (cell->op == OP_SLEEP) {
             // Do nothing
         }
+        // Simple operations: use the stored operand fields.
         else {
             int op1 = cell->operand1IsLiteral ? cell->operand1Literal : (cell->operand1 ? cell->operand1->value : 0);
             int op2 = cell->operand2IsLiteral ? cell->operand2Literal : (cell->operand2 ? cell->operand2->value : 0);
@@ -182,7 +183,9 @@ void process_dependent_callback(Cell *dep, void *data) {
     }
 }
 
+// recalcUsingTopoOrder: Collect affected cells and update them once in topological order.
 void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
+    // Phase 1: BFS to collect affected cells.
     int queueCapacity = 100, queueSize = 0;
     Cell **queue = malloc(queueCapacity * sizeof(Cell *));
     int affectedCapacity = 100, affectedCount = 0;
@@ -212,7 +215,8 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     if (visited) {
         avl_free(visited);
     }
-
+    
+    // Phase 2: Compute inDegree for each affected cell (only counting dependencies within affected).
     int *inDegree = malloc(affectedCount * sizeof(int));
     for (int i = 0; i < affectedCount; i++) {
         inDegree[i] = 0;
@@ -225,7 +229,8 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
             avl_traverse(affected[i]->dependencies, dep_check_callback, &depData);
         }
     }
-
+    
+    // Phase 3: Build zeroQueue.
     int *zeroQueue = malloc(affectedCount * sizeof(int));
     int zeroQueueSize = 0;
     for (int i = 0; i < affectedCount; i++) {
@@ -233,7 +238,8 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
             zeroQueue[zeroQueueSize++] = i;
         }
     }
-
+    
+    // Phase 4: Process cells in topological order (each updated exactly once).
     int processedCount = 0;
     ProcessDepData pData;
     pData.affected = affected;
@@ -372,7 +378,8 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
         recalcUsingTopoOrder(targetCell, spreadsheet);
         printSpreadsheet(spreadsheet);
     } else {
-        // Simple Operation
+        // Simple Operation branch.
+        // First, extract the target cell and the RHS as a string.
         char targetRef[10], rhs[100];
         if (sscanf(input, "%9[^=]=%99s", targetRef, rhs) != 2) {
             printf("Error: Invalid input format.\n");
@@ -452,6 +459,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
                           return;
             }
             targetCell->value = result;
+            // Store operand information for future recalculations.
             targetCell->operand1IsLiteral = operand1IsLiteral;
             targetCell->operand2IsLiteral = operand2IsLiteral;
             if (!operand1IsLiteral) {
