@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <limits.h>
+#include <unistd.h>      
 #include "cell.h"
 #include "spreadsheet.h"
 #include "avl_tree.h"       
@@ -15,7 +16,9 @@
 #define OP_ADV_MAX    7
 #define OP_ADV_AVG    8
 #define OP_ADV_STDEV  9
+#define OP_SLEEP      10  
 
+void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet);
 void parseCellReference(const char *ref, int *row, int *col);
 
 typedef struct {
@@ -31,13 +34,11 @@ static void collect_operands_callback(Cell *cell, void *data) {
     }
 }
 
-// Callback used by clearDependencies() to remove the target cell from each dependency’s dependents tree.
 static void remove_dependent_callback(Cell *source, void *target_ptr) {
     Cell *target = (Cell *) target_ptr;
     source->dependents = avl_delete(source->dependents, target, avl_cell_compare);
 }
 
-// For every cell in the dependency tree, remove this cell from its dependents tree.
 void clearDependencies(Cell *cell) {
     if (cell->dependencies) {
         avl_traverse(cell->dependencies, remove_dependent_callback, cell);
@@ -56,16 +57,12 @@ void addDependent(Cell *sourceCell, Cell *target) {
 
 void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
     if (cell->op != 0) {
-        // Advanced operations
+        // Advanced operations.
         if (cell->op >= OP_ADV_SUM && cell->op <= OP_ADV_STDEV) {
-            int rStart = cell->row1;
-            int cStart = cell->col1;
-            int rEnd = cell->row2;
-            int cEnd = cell->col2;
+            int rStart = cell->row1, cStart = cell->col1;
+            int rEnd = cell->row2, cEnd = cell->col2;
             long sum = 0;
-            int count = 0;
-            int minVal = INT_MAX;
-            int maxVal = INT_MIN;
+            int count = 0, minVal = INT_MAX, maxVal = INT_MIN;
             for (int r = rStart; r <= rEnd; r++) {
                 for (int c = cStart; c <= cEnd; c++) {
                     int val = spreadsheet->table[r][c].value;
@@ -77,18 +74,10 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
             }
             int result = 0;
             switch (cell->op) {
-                case OP_ADV_SUM:
-                    result = (int) sum;
-                    break;
-                case OP_ADV_MIN:
-                    result = minVal;
-                    break;
-                case OP_ADV_MAX:
-                    result = maxVal;
-                    break;
-                case OP_ADV_AVG:
-                    result = (count > 0) ? (int)(sum / count) : 0;
-                    break;
+                case OP_ADV_SUM: result = (int) sum; break;
+                case OP_ADV_MIN: result = minVal; break;
+                case OP_ADV_MAX: result = maxVal; break;
+                case OP_ADV_AVG: result = (count > 0) ? (int)(sum / count) : 0; break;
                 case OP_ADV_STDEV: {
                     double mean = (count > 0) ? (double) sum / count : 0.0;
                     double sqDiffSum = 0.0;
@@ -102,13 +91,15 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
                     result = (int) stdev;
                     break;
                 }
-                default:
-                    break;
+                default: break;
             }
             cell->value = result;
-            printf("Recalculated advanced formula cell new value: %d\n", cell->value);
         }
-        // Simple operations
+        // SLEEP operation
+        else if (cell->op == OP_SLEEP) {
+            // Nothing to do.
+        }
+        // Simple operations.
         else {
             OperandCollector collector = { .operands = {NULL, NULL}, .count = 0 };
             avl_traverse(cell->dependencies, collect_operands_callback, &collector);
@@ -134,7 +125,6 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
                     default:
                         break;
                 }
-                printf("Recalculated simple formula cell new value: %d\n", cell->value);
             }
         }
     }
@@ -216,7 +206,7 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     int affectedCount = 0;
     Cell **affected = malloc(affectedCapacity * sizeof(Cell *));
     
-    AVLNode *visited = NULL; 
+    AVLNode *visited = NULL;
     BFSQueueData bfsData;
     bfsData.queue = queue;
     bfsData.queueSize = &queueSize;
@@ -256,15 +246,15 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
             avl_traverse(affected[i]->dependencies, dep_check_callback, &depData);
         }
     }
-    
+
     int *zeroQueue = malloc(affectedCount * sizeof(int));
     int zeroQueueSize = 0;
-    int zeroQueueFront = 0;
     for (int i = 0; i < affectedCount; i++) {
-        if (inDegree[i] == 0)
+        if (inDegree[i] == 0) {
             zeroQueue[zeroQueueSize++] = i;
+        }
     }
-    
+
     int processedCount = 0;
     ProcessDepData pData;
     pData.affected = affected;
@@ -272,12 +262,15 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     pData.inDegree = inDegree;
     pData.zeroQueue = zeroQueue;
     pData.zeroQueueSize = &zeroQueueSize;
-    
+
+    int zeroQueueFront = 0;
     while (zeroQueueFront < zeroQueueSize) {
         int idx = zeroQueue[zeroQueueFront++];
         Cell *cell = affected[idx];
+
         recalc_cell(cell, spreadsheet);
         processedCount++;
+
         if (cell->dependents)
             avl_traverse(cell->dependents, process_dependent_callback, &pData);
     }
@@ -295,15 +288,16 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     free(zeroQueue);
 }
 
+ 
 void handleOperation(const char *input, Spreadsheet *spreadsheet) {
-    // Check if the input contains a '('
+    // Advanced operations branch (with '(')
     if (strchr(input, '(') != NULL) {
-        char targetRef[10], opStr[10], rangeStr[30];
+        char targetRef[10], opStr[10], paramStr[30];
         char extra[100];
-        if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])%9s", targetRef, opStr, rangeStr, extra) == 4) {
+        if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])%9s", targetRef, opStr, paramStr, extra) == 4) {
             printf("Error: Invalid input format, unexpected characters found after function.\n");
             return;
-        } else if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])", targetRef, opStr, rangeStr) != 3) {
+        } else if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])", targetRef, opStr, paramStr) != 3) {
             printf("Error: Invalid advanced formula format.\n");
             return;
         }
@@ -314,88 +308,95 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
             printf("Error: Target cell %s is out of bounds.\n", targetRef);
             return;
         }
-        char startRef[10], endRef[10];
-        const char *colon = strchr(rangeStr, ':');
-        if (!colon) {
-            printf("Error: Invalid range format: %s\n", rangeStr);
-            return;
-        }
-        size_t len1 = colon - rangeStr;
-        strncpy(startRef, rangeStr, len1);
-        startRef[len1] = '\0';
-        strcpy(endRef, colon + 1);
-        int rStart, cStart, rEnd, cEnd;
-        parseCellReference(startRef, &rStart, &cStart);
-        parseCellReference(endRef, &rEnd, &cEnd);
-        if (rStart > rEnd || cStart > cEnd) {
-            printf("Error: Invalid range order: %s (should be top-left:bottom-right).\n", rangeStr);
-            return;
-        }
-        long sum = 0;
-        int count = 0;
-        int minVal = INT_MAX;
-        int maxVal = INT_MIN;
-        for (int r = rStart; r <= rEnd; r++) {
-            for (int c = cStart; c <= cEnd; c++) {
-                int val = spreadsheet->table[r][c].value;
-                sum += val;
-                if (val < minVal) minVal = val;
-                if (val > maxVal) maxVal = val;
-                count++;
-            }
-        }
-        int result = 0;
-        int opCode = 0;
-        if (strcmp(opStr, "SUM") == 0) {
-            result = (int) sum;
-            opCode = OP_ADV_SUM;
-        } else if (strcmp(opStr, "MIN") == 0) {
-            result = minVal;
-            opCode = OP_ADV_MIN;
-        } else if (strcmp(opStr, "MAX") == 0) {
-            result = maxVal;
-            opCode = OP_ADV_MAX;
-        } else if (strcmp(opStr, "AVG") == 0) {
-            result = (count > 0) ? (int)(sum / count) : 0;
-            opCode = OP_ADV_AVG;
-        } else if (strcmp(opStr, "STDEV") == 0) {
-            double mean = (count > 0) ? (double) sum / count : 0.0;
-            double sqDiffSum = 0.0;
-            for (int r = rStart; r <= rEnd; r++) {
-                for (int c = cStart; c <= cEnd; c++) {
-                    double diff = spreadsheet->table[r][c].value - mean;
-                    sqDiffSum += diff * diff;
-                }
-            }
-            double stdev = (count > 0) ? sqrt(sqDiffSum / count) : 0.0;
-            result = (int) stdev;
-            opCode = OP_ADV_STDEV;
-        } else {
-            printf("Error: Unsupported advanced operation '%s'.\n", opStr);
-            return;
-        }
         Cell *targetCell = &spreadsheet->table[targetRow][targetCol];
         clearDependencies(targetCell);
+        int result = 0, opCode = 0;
+        int rStart, cStart, rEnd, cEnd;
+        // Check for SLEEP operation.
+        if (strcmp(opStr, "SLEEP") == 0) {
+            int seconds = atoi(paramStr);
+            printf("Sleeping for %d seconds...\n", seconds);
+            sleep(seconds);
+            result = seconds;
+            opCode = OP_SLEEP;
+            rStart = cStart = rEnd = cEnd = -1;
+        } else {
+            char startRef[10], endRef[10];
+            const char *colon = strchr(paramStr, ':');
+            if (!colon) {
+                printf("Error: Invalid range format: %s\n", paramStr);
+                return;
+            }
+            size_t len1 = colon - paramStr;
+            strncpy(startRef, paramStr, len1);
+            startRef[len1] = '\0';
+            strcpy(endRef, colon + 1);
+            parseCellReference(startRef, &rStart, &cStart);
+            parseCellReference(endRef, &rEnd, &cEnd);
+            if (rStart > rEnd || cStart > cEnd) {
+                printf("Error: Invalid range order: %s (should be top-left:bottom-right).\n", paramStr);
+                return;
+            }
+            long sum = 0;
+            int count = 0, minVal = INT_MAX, maxVal = INT_MIN;
+            for (int r = rStart; r <= rEnd; r++) {
+                for (int c = cStart; c <= cEnd; c++) {
+                    int val = spreadsheet->table[r][c].value;
+                    sum += val;
+                    if (val < minVal) minVal = val;
+                    if (val > maxVal) maxVal = val;
+                    count++;
+                }
+            }
+            if (strcmp(opStr, "SUM") == 0) {
+                result = (int) sum;
+                opCode = OP_ADV_SUM;
+            } else if (strcmp(opStr, "MIN") == 0) {
+                result = minVal;
+                opCode = OP_ADV_MIN;
+            } else if (strcmp(opStr, "MAX") == 0) {
+                result = maxVal;
+                opCode = OP_ADV_MAX;
+            } else if (strcmp(opStr, "AVG") == 0) {
+                result = (count > 0) ? (int)(sum / count) : 0;
+                opCode = OP_ADV_AVG;
+            } else if (strcmp(opStr, "STDEV") == 0) {
+                double mean = (count > 0) ? (double) sum / count : 0.0;
+                double sqDiffSum = 0.0;
+                for (int r = rStart; r <= rEnd; r++) {
+                    for (int c = cStart; c <= cEnd; c++) {
+                        double diff = spreadsheet->table[r][c].value - mean;
+                        sqDiffSum += diff * diff;
+                    }
+                }
+                double stdev = (count > 0) ? sqrt(sqDiffSum / count) : 0.0;
+                result = (int) stdev;
+                opCode = OP_ADV_STDEV;
+            } else {
+                printf("Error: Unsupported advanced operation '%s'.\n", opStr);
+                return;
+            }
+        }
         targetCell->op = opCode;
         targetCell->value = result;
-        // Save the range boundaries.
         targetCell->row1 = rStart;
         targetCell->col1 = cStart;
         targetCell->row2 = rEnd;
         targetCell->col2 = cEnd;
-        printf("Performed advanced operation %s on range %s, result: %d\n", opStr, rangeStr, result);
-        // Set up dependencies
-        for (int r = rStart; r <= rEnd; r++) {
-            for (int c = cStart; c <= cEnd; c++) {
-                Cell *source = &spreadsheet->table[r][c];
-                addDependent(source, targetCell);
-                addDependency(targetCell, source);
+        // Set up dependencies only for range-based operations.
+        if (opCode != OP_SLEEP) {
+            for (int r = rStart; r <= rEnd; r++) {
+                for (int c = cStart; c <= cEnd; c++) {
+                    Cell *source = &spreadsheet->table[r][c];
+                    addDependent(source, targetCell);
+                    addDependency(targetCell, source);
+                }
             }
         }
         recalcUsingTopoOrder(targetCell, spreadsheet);
         printSpreadsheet(spreadsheet);
     } else {
-        // Simple Operation 
+        // Simple Operation branch.
         char extra[100];
         char targetRef[10], sourceRef1[10], sourceRef2[10];
         char opChar;
@@ -458,6 +459,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
             printf("Performed operation %s=%s%c%s, result: %d\n", targetRef, sourceRef1, opChar, sourceRef2, targetCell->value);
             recalcUsingTopoOrder(targetCell, spreadsheet);
             printSpreadsheet(spreadsheet);
+            return;
         } else if (sscanf(input, "%9[^=]=%d%9s", targetRef, &value, extra) == 3) {
             printf("Error: Invalid input format, unexpected characters found after value.\n");
             return;
@@ -474,7 +476,9 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
             targetCell->value = value;
             printf("Set %s to %d\n", targetRef, value);
             recalcUsingTopoOrder(targetCell, spreadsheet);
+            printf("hey\n");
             printSpreadsheet(spreadsheet);
+            return;
         } else {
             printf("(unrecognized cmd) ");
         }
