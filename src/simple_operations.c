@@ -4,7 +4,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <limits.h>
-#include <unistd.h>      
+#include <unistd.h>       // For sleep()
 #include "cell.h"
 #include "spreadsheet.h"
 #include "avl_tree.h"       
@@ -18,6 +18,7 @@
 #define OP_ADV_STDEV  9
 #define OP_SLEEP      10  
 
+// Forward declarations.
 void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet);
 void parseCellReference(const char *ref, int *row, int *col);
 
@@ -25,14 +26,6 @@ typedef struct {
     Cell *operands[2];
     int count;
 } OperandCollector;
-
-static void collect_operands_callback(Cell *cell, void *data) {
-    OperandCollector *collector = (OperandCollector *) data;
-    if (collector->count < 2) {
-        collector->operands[collector->count] = cell;
-        collector->count++;
-    }
-}
 
 static void remove_dependent_callback(Cell *source, void *target_ptr) {
     Cell *target = (Cell *) target_ptr;
@@ -95,41 +88,32 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
             }
             cell->value = result;
         }
-        // SLEEP operation
+        // SLEEP operation.
         else if (cell->op == OP_SLEEP) {
-            // Nothing to do.
+            // Do nothing
         }
-        // Simple operations.
         else {
-            OperandCollector collector = { .operands = {NULL, NULL}, .count = 0 };
-            avl_traverse(cell->dependencies, collect_operands_callback, &collector);
-            if (collector.count >= 2 && collector.operands[0] && collector.operands[1]) {
-                switch (cell->op) {
-                    case 1:
-                        cell->value = collector.operands[0]->value + collector.operands[1]->value;
-                        break;
-                    case 2:
-                        cell->value = collector.operands[0]->value - collector.operands[1]->value;
-                        break;
-                    case 3:
-                        cell->value = collector.operands[0]->value * collector.operands[1]->value;
-                        break;
-                    case 4:
-                        if (collector.operands[1]->value != 0)
-                            cell->value = collector.operands[0]->value / collector.operands[1]->value;
-                        else {
-                            printf("Error: Division by zero in simple formula recalculation.\n");
-                            return;
-                        }
-                        break;
-                    default:
-                        break;
-                }
+            int op1 = cell->operand1IsLiteral ? cell->operand1Literal : (cell->operand1 ? cell->operand1->value : 0);
+            int op2 = cell->operand2IsLiteral ? cell->operand2Literal : (cell->operand2 ? cell->operand2->value : 0);
+            switch (cell->op) {
+                case 1: cell->value = op1 + op2; break;
+                case 2: cell->value = op1 - op2; break;
+                case 3: cell->value = op1 * op2; break;
+                case 4: 
+                    if (op2 != 0)
+                        cell->value = op1 / op2; 
+                    else {
+                        printf("Error: Division by zero in simple formula recalculation.\n");
+                        return;
+                    }
+                    break;
+                default: break;
             }
         }
     }
 }
 
+// findAffectedIndex: returns index of cell in array or -1 if not found.
 int findAffectedIndex(Cell **arr, int count, Cell *cell) {
     for (int i = 0; i < count; i++) {
         if (arr[i] == cell)
@@ -138,6 +122,7 @@ int findAffectedIndex(Cell **arr, int count, Cell *cell) {
     return -1;
 }
 
+// Structures and callbacks for BFS & topological sorting.
 typedef struct {
     Cell **queue;
     int *queueSize;
@@ -198,25 +183,19 @@ void process_dependent_callback(Cell *dep, void *data) {
 }
 
 void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
-    int queueCapacity = 100;
-    int queueSize = 0;
+    int queueCapacity = 100, queueSize = 0;
     Cell **queue = malloc(queueCapacity * sizeof(Cell *));
-    
-    int affectedCapacity = 100;
-    int affectedCount = 0;
+    int affectedCapacity = 100, affectedCount = 0;
     Cell **affected = malloc(affectedCapacity * sizeof(Cell *));
-    
     AVLNode *visited = NULL;
     BFSQueueData bfsData;
     bfsData.queue = queue;
     bfsData.queueSize = &queueSize;
     bfsData.queueCapacity = &queueCapacity;
     bfsData.visited = &visited;
-    
     if (start->dependents) {
         avl_traverse(start->dependents, bfs_enqueue_callback, &bfsData);
     }
-    
     int front = 0;
     while (front < queueSize) {
         Cell *curr = queue[front++];
@@ -262,15 +241,13 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     pData.inDegree = inDegree;
     pData.zeroQueue = zeroQueue;
     pData.zeroQueueSize = &zeroQueueSize;
-
+    
     int zeroQueueFront = 0;
     while (zeroQueueFront < zeroQueueSize) {
         int idx = zeroQueue[zeroQueueFront++];
         Cell *cell = affected[idx];
-
         recalc_cell(cell, spreadsheet);
         processedCount++;
-
         if (cell->dependents)
             avl_traverse(cell->dependents, process_dependent_callback, &pData);
     }
@@ -288,9 +265,9 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     free(zeroQueue);
 }
 
- 
+// handleOperation: Processes input commands.
 void handleOperation(const char *input, Spreadsheet *spreadsheet) {
-    // Advanced operations branch (with '(')
+    // If input contains '(', treat as advanced operation.
     if (strchr(input, '(') != NULL) {
         char targetRef[10], opStr[10], paramStr[30];
         char extra[100];
@@ -312,7 +289,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
         clearDependencies(targetCell);
         int result = 0, opCode = 0;
         int rStart, cStart, rEnd, cEnd;
-        // Check for SLEEP operation.
+        // SLEEP operation.
         if (strcmp(opStr, "SLEEP") == 0) {
             int seconds = atoi(paramStr);
             printf("Sleeping for %d seconds...\n", seconds);
@@ -383,7 +360,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
         targetCell->col1 = cStart;
         targetCell->row2 = rEnd;
         targetCell->col2 = cEnd;
-        // Set up dependencies only for range-based operations.
         if (opCode != OP_SLEEP) {
             for (int r = rStart; r <= rEnd; r++) {
                 for (int c = cStart; c <= cEnd; c++) {
@@ -396,91 +372,130 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
         recalcUsingTopoOrder(targetCell, spreadsheet);
         printSpreadsheet(spreadsheet);
     } else {
-        // Simple Operation branch.
-        char extra[100];
-        char targetRef[10], sourceRef1[10], sourceRef2[10];
-        char opChar;
-        int value;
-        if (sscanf(input, "%9[^=]=%9[^+*/-]%c%9s%9s", targetRef, sourceRef1, &opChar, sourceRef2, extra) == 5) {
-            printf("Error: Invalid input format, unexpected characters found after operation.\n");
+        // Simple Operation
+        char targetRef[10], rhs[100];
+        if (sscanf(input, "%9[^=]=%99s", targetRef, rhs) != 2) {
+            printf("Error: Invalid input format.\n");
             return;
-        } else if (sscanf(input, "%9[^=]=%9[^+*/-]%c%9s", targetRef, sourceRef1, &opChar, sourceRef2) == 4) {
-            int targetRow, targetCol, row1, col1, row2, col2;
-            parseCellReference(targetRef, &targetRow, &targetCol);
-            parseCellReference(sourceRef1, &row1, &col1);
-            parseCellReference(sourceRef2, &row2, &col2);
-            if (targetRow < 0 || targetRow >= spreadsheet->rows ||
-                targetCol < 0 || targetCol >= spreadsheet->cols ||
-                row1 < 0 || row1 >= spreadsheet->rows ||
-                col1 < 0 || col1 >= spreadsheet->cols ||
-                row2 < 0 || row2 >= spreadsheet->rows ||
-                col2 < 0 || col2 >= spreadsheet->cols) {
-                printf("Error: One or more cell references are out of bounds.\n");
+        }
+        int targetRow, targetCol;
+        parseCellReference(targetRef, &targetRow, &targetCol);
+        Cell *targetCell = &spreadsheet->table[targetRow][targetCol];
+        clearDependencies(targetCell);
+        
+        // Check if the RHS contains an operator.
+        if (strchr(rhs, '+') || strchr(rhs, '-') || strchr(rhs, '*') || strchr(rhs, '/')) {
+            // Binary operation.
+            char operand1Str[20], operand2Str[20];
+            char opChar;
+            if (sscanf(rhs, "%19[^+*/-]%c%19s", operand1Str, &opChar, operand2Str) != 3) {
+                printf("Error: Invalid binary operation format.\n");
                 return;
             }
-            Cell *targetCell = &spreadsheet->table[targetRow][targetCol];
-            Cell *cell1 = &spreadsheet->table[row1][col1];
-            Cell *cell2 = &spreadsheet->table[row2][col2];
-            clearDependencies(targetCell);
-            switch (opChar) {
-                case '+':
-                    targetCell->value = cell1->value + cell2->value;
-                    targetCell->op = 1;
-                    break;
-                case '-':
-                    targetCell->value = cell1->value - cell2->value;
-                    targetCell->op = 2;
-                    break;
-                case '*':
-                    targetCell->value = cell1->value * cell2->value;
-                    targetCell->op = 3;
-                    break;
-                case '/':
-                    if (cell2->value != 0) {
-                        targetCell->value = cell1->value / cell2->value;
-                        targetCell->op = 4;
-                    } else {
-                        printf("Error: Division by zero.\n");
-                        return;
-                    }
-                    break;
-                default:
-                    printf("Error: Unsupported operation '%c'.\n", opChar);
+            int operand1IsLiteral = 0, operand2IsLiteral = 0;
+            int literal1 = 0, literal2 = 0;
+            Cell *operand1 = NULL, *operand2 = NULL;
+            if (isalpha(operand1Str[0])) {
+                int row1, col1;
+                parseCellReference(operand1Str, &row1, &col1);
+                if (row1 < 0 || row1 >= spreadsheet->rows || col1 < 0 || col1 >= spreadsheet->cols) {
+                    printf("Error: Operand cell %s is out of bounds.\n", operand1Str);
                     return;
+                }
+                operand1 = &spreadsheet->table[row1][col1];
+            } else {
+                if (sscanf(operand1Str, "%d", &literal1) != 1) {
+                    printf("Error: Invalid literal operand '%s'.\n", operand1Str);
+                    return;
+                }
+                operand1IsLiteral = 1;
             }
-            targetCell->row1 = row1;
-            targetCell->col1 = col1;
-            targetCell->row2 = row2;
-            targetCell->col2 = col2;
-            addDependency(targetCell, cell1);
-            addDependency(targetCell, cell2);
-            addDependent(cell1, targetCell);
-            addDependent(cell2, targetCell);
-            printf("Performed operation %s=%s%c%s, result: %d\n", targetRef, sourceRef1, opChar, sourceRef2, targetCell->value);
+            if (isalpha(operand2Str[0])) {
+                int row2, col2;
+                parseCellReference(operand2Str, &row2, &col2);
+                if (row2 < 0 || row2 >= spreadsheet->rows || col2 < 0 || col2 >= spreadsheet->cols) {
+                    printf("Error: Operand cell %s is out of bounds.\n", operand2Str);
+                    return;
+                }
+                operand2 = &spreadsheet->table[row2][col2];
+            } else {
+                if (sscanf(operand2Str, "%d", &literal2) != 1) {
+                    printf("Error: Invalid literal operand '%s'.\n", operand2Str);
+                    return;
+                }
+                operand2IsLiteral = 1;
+            }
+            int result = 0;
+            switch (opChar) {
+                case '+': result = (operand1IsLiteral ? literal1 : operand1->value) +
+                                 (operand2IsLiteral ? literal2 : operand2->value);
+                          targetCell->op = 1;
+                          break;
+                case '-': result = (operand1IsLiteral ? literal1 : operand1->value) -
+                                 (operand2IsLiteral ? literal2 : operand2->value);
+                          targetCell->op = 2;
+                          break;
+                case '*': result = (operand1IsLiteral ? literal1 : operand1->value) *
+                                 (operand2IsLiteral ? literal2 : operand2->value);
+                          targetCell->op = 3;
+                          break;
+                case '/': if ((operand2IsLiteral ? literal2 : operand2->value) == 0) {
+                              printf("Error: Division by zero.\n");
+                              return;
+                          }
+                          result = (operand1IsLiteral ? literal1 : operand1->value) /
+                                   (operand2IsLiteral ? literal2 : operand2->value);
+                          targetCell->op = 4;
+                          break;
+                default:
+                          printf("Error: Unsupported operation '%c'.\n", opChar);
+                          return;
+            }
+            targetCell->value = result;
+            targetCell->operand1IsLiteral = operand1IsLiteral;
+            targetCell->operand2IsLiteral = operand2IsLiteral;
+            if (!operand1IsLiteral) {
+                targetCell->operand1 = operand1;
+                addDependency(targetCell, operand1);
+                addDependent(operand1, targetCell);
+            } else {
+                targetCell->operand1Literal = literal1;
+            }
+            if (!operand2IsLiteral) {
+                targetCell->operand2 = operand2;
+                addDependency(targetCell, operand2);
+                addDependent(operand2, targetCell);
+            } else {
+                targetCell->operand2Literal = literal2;
+            }
+            //printf("Performed operation %s=%s%c%s, result: %d\n", targetRef, operand1Str, opChar, operand2Str, result);
             recalcUsingTopoOrder(targetCell, spreadsheet);
             printSpreadsheet(spreadsheet);
-            return;
-        } else if (sscanf(input, "%9[^=]=%d%9s", targetRef, &value, extra) == 3) {
-            printf("Error: Invalid input format, unexpected characters found after value.\n");
-            return;
-        } else if (sscanf(input, "%9[^=]=%d", targetRef, &value) == 2) {
-            int row, col;
-            parseCellReference(targetRef, &row, &col);
-            if (row < 0 || row >= spreadsheet->rows || col < 0 || col >= spreadsheet->cols) {
-                printf("Error: Cell reference out of bounds (%s).\n", targetRef);
-                return;
-            }
-            Cell *targetCell = &spreadsheet->table[row][col];
-            clearDependencies(targetCell);
-            targetCell->op = 0;
-            targetCell->value = value;
-            printf("Set %s to %d\n", targetRef, value);
-            recalcUsingTopoOrder(targetCell, spreadsheet);
-            printf("hey\n");
-            printSpreadsheet(spreadsheet);
-            return;
         } else {
-            printf("(unrecognized cmd) ");
+            // No operator: direct assignment.
+            if (isalpha(rhs[0])) {
+                int row, col;
+                parseCellReference(rhs, &row, &col);
+                if (row < 0 || row >= spreadsheet->rows || col < 0 || col >= spreadsheet->cols) {
+                    printf("Error: Cell reference out of bounds (%s).\n", rhs);
+                    return;
+                }
+                Cell *source = &spreadsheet->table[row][col];
+                targetCell->value = source->value;
+                addDependency(targetCell, source);
+                addDependent(source, targetCell);
+            } else {
+                int val;
+                if (sscanf(rhs, "%d", &val) != 1) {
+                    printf("Error: Invalid literal in assignment.\n");
+                    return;
+                }
+                targetCell->value = val;
+            }
+            targetCell->op = 0;
+            //printf("Set %s to %d\n", targetRef, targetCell->value);
+            recalcUsingTopoOrder(targetCell, spreadsheet);
+            printSpreadsheet(spreadsheet);
         }
     }
 }
