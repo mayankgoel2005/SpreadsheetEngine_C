@@ -5,7 +5,7 @@
 #include "spreadsheet.h"
 #include "cell.h"
 
-//initialized the spreadsheet with given rows and columns.
+// Initialize the spreadsheet with given rows and columns.
 Spreadsheet *initializeSpreadsheet(int rows, int cols) {
     Spreadsheet *spreadsheet = malloc(sizeof(Spreadsheet));
     if (!spreadsheet) {
@@ -35,10 +35,10 @@ Spreadsheet *initializeSpreadsheet(int rows, int cols) {
     return spreadsheet;
 }
 
-// converted a column index to excel style letters
+// Convert a column index to Excel-style letters.
 void getColumnLabel(int colIndex, char *label) {
     int i = 0;
-    char temp[4]; // Up to 3 letters.
+    char temp[4]; // Temporary buffer for up to 3 letters.
     while (colIndex >= 0) {
         temp[i++] = 'A' + (colIndex % 26);
         colIndex = (colIndex / 26) - 1;
@@ -51,37 +51,28 @@ void getColumnLabel(int colIndex, char *label) {
     label[len] = '\0';
 }
 
-// print specified portion
+// Print the specified portion of the spreadsheet without grid borders.
+// Each cell (and header) is printed in a field of width 12.
 void printSpreadsheet(Spreadsheet *spreadsheet) {
     int endRow = (spreadsheet->startRow + 10 < spreadsheet->rows) ? spreadsheet->startRow + 10 : spreadsheet->rows;
     int endCol = (spreadsheet->startCol + 10 < spreadsheet->cols) ? spreadsheet->startCol + 10 : spreadsheet->cols;
 
-    printf("   ");
+    // Print column headers
+    printf("%4s", "");  // Empty space for the row header column.
     for (int col = spreadsheet->startCol; col < endCol; col++) {
         char label[4];
         getColumnLabel(col, label);
-        printf("  %-4s", label);
+        printf("%12s", label);
     }
     printf("\n");
 
-    printf("   ");
-    for (int col = spreadsheet->startCol; col < endCol; col++) {
-        printf("+-----");
-    }
-    printf("+\n");
-
+    // Print each row: row number then each cell value padded to 12 characters.
     for (int row = spreadsheet->startRow; row < endRow; row++) {
-        printf("%2d ", row + 1);
+        printf("%4d", row + 1);
         for (int col = spreadsheet->startCol; col < endCol; col++) {
-            printf("| %3d ", spreadsheet->table[row][col].value);
+            printf("%12d", spreadsheet->table[row][col].value);
         }
-        printf("|\n");
-
-        printf("   ");
-        for (int col = spreadsheet->startCol; col < endCol; col++) {
-            printf("+-----");
-        }
-        printf("+\n");
+        printf("\n");
     }
 }
 
