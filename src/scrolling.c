@@ -44,3 +44,8 @@ void scrollRight(Spreadsheet *spreadsheet) {
     }
     printf("Scrolled right.\n");
 }
+
+void scrollTo(Spreadsheet *spreadsheet, int row, int col) {
+    spreadsheet->startRow = row-1;
+    spreadsheet->startCol = col-1;
+}
