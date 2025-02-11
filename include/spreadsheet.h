@@ -1,19 +1,24 @@
-// spreadsheet.h
 #ifndef SPREADSHEET_H
 #define SPREADSHEET_H
 
 #include "cell.h"
 
 typedef struct Spreadsheet {
-    int rows, cols;
     int display;
-    int startRow, startCol; // For scrolling purposes.
+    int rows;
+    int cols;
+    int startRow;
+    int startCol;
     Cell **table;
+    // Global list for advanced (range) formulas.
+    Cell **advancedFormulas;
+    int advancedFormulasCount;
+    int advancedFormulasCapacity;
 } Spreadsheet;
 
 Spreadsheet *initializeSpreadsheet(int rows, int cols);
-void getColumnLabel(int colIndex, char *label);
 void printSpreadsheet(Spreadsheet *spreadsheet);
 void freeSpreadsheet(Spreadsheet *spreadsheet);
+void handleOperation(const char *input, Spreadsheet *spreadsheet);
 
-#endif // SPREADSHEET_H
+#endif  // SPREADSHEET_H

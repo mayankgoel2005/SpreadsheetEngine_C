@@ -4,7 +4,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <limits.h>
-#include <unistd.h>       // For sleep()
+#include <unistd.h>      
 #include "cell.h"
 #include "spreadsheet.h"
 #include "avl_tree.h"       
@@ -22,10 +22,46 @@
 void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet);
 void parseCellReference(const char *ref, int *row, int *col);
 
+typedef struct Node {
+    Cell *cell;
+    struct Node *next;
+} Node;
+
+// Enqueue a cell into the linked list queue.
+void enqueue(Node **head, Node **tail, Cell *cell) {
+    Node *newNode = malloc(sizeof(Node));
+    newNode->cell = cell;
+    newNode->next = NULL;
+    if (*tail == NULL) {
+        *head = *tail = newNode;
+    } else {
+        (*tail)->next = newNode;
+        *tail = newNode;
+    }
+}
+
+// Dequeue a cell from the linked list queue.
+Cell *dequeue(Node **head, Node **tail) {
+    if (*head == NULL)
+        return NULL;
+    Node *temp = *head;
+    Cell *cell = temp->cell;
+    *head = temp->next;
+    if (*head == NULL)
+        *tail = NULL;
+    free(temp);
+    return cell;
+}
+
 typedef struct {
-    Cell *operands[2];
-    int count;
-} OperandCollector;
+    Node **head;
+    Node **tail;
+} LLQueueData;
+
+void bfs_enqueue_callback_ll(Cell *cell, void *data) {
+    LLQueueData *qdata = (LLQueueData *) data;
+    enqueue(qdata->head, qdata->tail, cell);
+}
 
 static void remove_dependent_callback(Cell *source, void *target_ptr) {
     Cell *target = (Cell *) target_ptr;
@@ -90,9 +126,9 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
         }
         // SLEEP operation.
         else if (cell->op == OP_SLEEP) {
-            // Do nothing
+            // Do nothing; cell value remains as set.
         }
-        // Simple operations: use the stored operand fields.
+        // Simple operations.
         else {
             int op1 = cell->operand1IsLiteral ? cell->operand1Literal : (cell->operand1 ? cell->operand1->value : 0);
             int op2 = cell->operand2IsLiteral ? cell->operand2Literal : (cell->operand2 ? cell->operand2->value : 0);
@@ -100,9 +136,9 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
                 case 1: cell->value = op1 + op2; break;
                 case 2: cell->value = op1 - op2; break;
                 case 3: cell->value = op1 * op2; break;
-                case 4: 
+                case 4:
                     if (op2 != 0)
-                        cell->value = op1 / op2; 
+                        cell->value = op1 / op2;
                     else {
                         printf("Error: Division by zero in simple formula recalculation.\n");
                         return;
@@ -114,7 +150,6 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
     }
 }
 
-// findAffectedIndex: returns index of cell in array or -1 if not found.
 int findAffectedIndex(Cell **arr, int count, Cell *cell) {
     for (int i = 0; i < count; i++) {
         if (arr[i] == cell)
@@ -123,30 +158,19 @@ int findAffectedIndex(Cell **arr, int count, Cell *cell) {
     return -1;
 }
 
-// Structures and callbacks for BFS & topological sorting.
 typedef struct {
     Cell **queue;
     int *queueSize;
     int *queueCapacity;
     AVLNode **visited; 
-} BFSQueueData;
-
-void enqueue_cell(Cell *cell, BFSQueueData *data) {
-    if (avl_find(*(data->visited), cell, avl_cell_compare))
-        return;
-    *(data->visited) = avl_insert(*(data->visited), cell, avl_cell_compare);
-    if (*(data->queueSize) >= *(data->queueCapacity)) {
-        *(data->queueCapacity) *= 2;
-        data->queue = realloc(data->queue, (*(data->queueCapacity)) * sizeof(Cell *));
-    }
-    data->queue[*(data->queueSize)] = cell;
-    (*(data->queueSize))++;
-}
+} BFSQueueDataArray;  
 
 void bfs_enqueue_callback(Cell *cell, void *data) {
-    BFSQueueData *bfsData = (BFSQueueData *) data;
-    enqueue_cell(cell, bfsData);
+    (void) cell;
+    (void) data;
+    // Function intentionally does nothing
 }
+
 
 typedef struct {
     Cell **affected;
@@ -183,40 +207,32 @@ void process_dependent_callback(Cell *dep, void *data) {
     }
 }
 
-// recalcUsingTopoOrder: Collect affected cells and update them once in topological order.
 void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
-    // Phase 1: BFS to collect affected cells.
-    int queueCapacity = 100, queueSize = 0;
-    Cell **queue = malloc(queueCapacity * sizeof(Cell *));
+
+    Node *queueHead = NULL, *queueTail = NULL;
+    LLQueueData llData;
+    llData.head = &queueHead;
+    llData.tail = &queueTail;
+
     int affectedCapacity = 100, affectedCount = 0;
     Cell **affected = malloc(affectedCapacity * sizeof(Cell *));
-    AVLNode *visited = NULL;
-    BFSQueueData bfsData;
-    bfsData.queue = queue;
-    bfsData.queueSize = &queueSize;
-    bfsData.queueCapacity = &queueCapacity;
-    bfsData.visited = &visited;
+
     if (start->dependents) {
-        avl_traverse(start->dependents, bfs_enqueue_callback, &bfsData);
+        avl_traverse(start->dependents, bfs_enqueue_callback_ll, &llData);
     }
-    int front = 0;
-    while (front < queueSize) {
-        Cell *curr = queue[front++];
+
+    while (queueHead != NULL) {
+        Cell *curr = dequeue(&queueHead, &queueTail);
         if (affectedCount >= affectedCapacity) {
             affectedCapacity *= 2;
             affected = realloc(affected, affectedCapacity * sizeof(Cell *));
         }
         affected[affectedCount++] = curr;
         if (curr->dependents) {
-            avl_traverse(curr->dependents, bfs_enqueue_callback, &bfsData);
+            avl_traverse(curr->dependents, bfs_enqueue_callback_ll, &llData);
         }
     }
-    free(queue);
-    if (visited) {
-        avl_free(visited);
-    }
-    
-    // Phase 2: Compute inDegree for each affected cell (only counting dependencies within affected).
+
     int *inDegree = malloc(affectedCount * sizeof(int));
     for (int i = 0; i < affectedCount; i++) {
         inDegree[i] = 0;
@@ -229,8 +245,7 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
             avl_traverse(affected[i]->dependencies, dep_check_callback, &depData);
         }
     }
-    
-    // Phase 3: Build zeroQueue.
+
     int *zeroQueue = malloc(affectedCount * sizeof(int));
     int zeroQueueSize = 0;
     for (int i = 0; i < affectedCount; i++) {
@@ -238,8 +253,7 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
             zeroQueue[zeroQueueSize++] = i;
         }
     }
-    
-    // Phase 4: Process cells in topological order (each updated exactly once).
+
     int processedCount = 0;
     ProcessDepData pData;
     pData.affected = affected;
@@ -256,6 +270,7 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
         processedCount++;
         if (cell->dependents)
             avl_traverse(cell->dependents, process_dependent_callback, &pData);
+        // printSelectedCells(spreadsheet);
     }
     
     if (processedCount != affectedCount) {

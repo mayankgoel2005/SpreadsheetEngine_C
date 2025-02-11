@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
-#include "cell.h"
+
 int avl_height(AVLNode *node) {
     return node ? node->height : 0;
 }
@@ -11,31 +11,8 @@ int avl_get_balance(AVLNode *node) {
     return node ? avl_height(node->left) - avl_height(node->right) : 0;
 }
 
-AVLNode* avl_right_rotate(AVLNode *y) {
-    AVLNode *x = y->left;
-    AVLNode *T2 = x->right;
-    x->right = y;
-    y->left = T2;
-    y->height = 1 + (avl_height(y->left) > avl_height(y->right) ? avl_height(y->left) : avl_height(y->right));
-    x->height = 1 + (avl_height(x->left) > avl_height(x->right) ? avl_height(x->left) : avl_height(x->right));
-    return x;
-}
-
-AVLNode* avl_left_rotate(AVLNode *x) {
-    AVLNode *y = x->right;
-    AVLNode *T2 = y->left;
-    y->left = x;
-    x->right = T2;
-    x->height = 1 + (avl_height(x->left) > avl_height(x->right) ? avl_height(x->left) : avl_height(x->right));
-    y->height = 1 + (avl_height(y->left) > avl_height(y->right) ? avl_height(y->left) : avl_height(y->right));
-    return y;
-}
-
-int avl_cell_compare(struct Cell *a, struct Cell *b) {
-    // Compare using pointer values.
-    if ((uintptr_t)a < (uintptr_t)b) return -1;
-    else if ((uintptr_t)a > (uintptr_t)b) return 1;
-    else return 0;
+static int max(int a, int b) {
+    return (a > b) ? a : b;
 }
 
 static AVLNode* create_node(struct Cell *cell) {
@@ -50,21 +27,39 @@ static AVLNode* create_node(struct Cell *cell) {
     return node;
 }
 
+AVLNode* avl_right_rotate(AVLNode *y) {
+    AVLNode *x = y->left;
+    AVLNode *T2 = x->right;
+    x->right = y;
+    y->left = T2;
+    y->height = 1 + max(avl_height(y->left), avl_height(y->right));
+    x->height = 1 + max(avl_height(x->left), avl_height(x->right));
+    return x;
+}
+
+AVLNode* avl_left_rotate(AVLNode *x) {
+    AVLNode *y = x->right;
+    AVLNode *T2 = y->left;
+    y->left = x;
+    x->right = T2;
+    x->height = 1 + max(avl_height(x->left), avl_height(x->right));
+    y->height = 1 + max(avl_height(y->left), avl_height(y->right));
+    return y;
+}
+
 AVLNode* avl_insert(AVLNode *root, struct Cell *cell, int (*cmp)(struct Cell*, struct Cell*)) {
     if (!root)
         return create_node(cell);
-
     int comp = cmp(cell, root->cell);
     if (comp < 0)
         root->left = avl_insert(root->left, cell, cmp);
     else if (comp > 0)
         root->right = avl_insert(root->right, cell, cmp);
     else
-        return root;  // duplicate key, do nothing
+        return root;  // duplicate key
 
-    root->height = 1 + (avl_height(root->left) > avl_height(root->right) ? avl_height(root->left) : avl_height(root->right));
+    root->height = 1 + max(avl_height(root->left), avl_height(root->right));
     int balance = avl_get_balance(root);
-
     // Left Left Case
     if (balance > 1 && cmp(cell, root->left->cell) < 0)
         return avl_right_rotate(root);
@@ -94,14 +89,13 @@ static AVLNode* min_value_node(AVLNode* node) {
 AVLNode* avl_delete(AVLNode *root, struct Cell *cell, int (*cmp)(struct Cell*, struct Cell*)) {
     if (!root)
         return root;
-
     int comp = cmp(cell, root->cell);
     if (comp < 0)
         root->left = avl_delete(root->left, cell, cmp);
     else if (comp > 0)
         root->right = avl_delete(root->right, cell, cmp);
     else {
-        // Node found.
+        // Found the node.
         if (!root->left || !root->right) {
             AVLNode *temp = root->left ? root->left : root->right;
             if (!temp) {
@@ -119,10 +113,8 @@ AVLNode* avl_delete(AVLNode *root, struct Cell *cell, int (*cmp)(struct Cell*, s
     }
     if (!root)
         return root;
-
-    root->height = 1 + (avl_height(root->left) > avl_height(root->right) ? avl_height(root->left) : avl_height(root->right));
+    root->height = 1 + max(avl_height(root->left), avl_height(root->right));
     int balance = avl_get_balance(root);
-
     // Left Left Case
     if (balance > 1 && avl_get_balance(root->left) >= 0)
         return avl_right_rotate(root);
@@ -156,7 +148,6 @@ AVLNode* avl_find(AVLNode *root, struct Cell *cell, int (*cmp)(struct Cell*, str
 
 void avl_traverse(AVLNode *root, void (*callback)(struct Cell*, void*), void *data) {
     if (root) {
-        printf("%d\n",root->cell->value);
         avl_traverse(root->left, callback, data);
         callback(root->cell, data);
         avl_traverse(root->right, callback, data);
@@ -169,4 +160,10 @@ void avl_free(AVLNode *root) {
         avl_free(root->right);
         free(root);
     }
+}
+
+int avl_cell_compare(struct Cell *a, struct Cell *b) {
+    if ((uintptr_t)a < (uintptr_t)b) return -1;
+    else if ((uintptr_t)a > (uintptr_t)b) return 1;
+    else return 0;
 }

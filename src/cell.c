@@ -1,12 +1,12 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <ctype.h>  
+#include <ctype.h>
 #include "cell.h"
-#include "avl_tree.h"  // If you use functions like avl_free
+#include "avl_tree.h"  
 
 void initCell(Cell *cell) {
     cell->value = 0;
-    cell->op = 0;
+    cell->op = OP_NONE;
     cell->row1 = cell->col1 = cell->row2 = cell->col2 = -1;
     cell->dependencies = NULL;
     cell->dependents = NULL;
@@ -19,8 +19,6 @@ void initCell(Cell *cell) {
 }
 
 void freeCell(Cell *cell) {
-    // If your cell allocates dynamic memory for dependencies/dependents,
-    // free them here. For example:
     if (cell->dependencies) {
         avl_free(cell->dependencies);
         cell->dependencies = NULL;
@@ -29,11 +27,8 @@ void freeCell(Cell *cell) {
         avl_free(cell->dependents);
         cell->dependents = NULL;
     }
-    // If no other dynamic memory is allocated inside Cell, nothing else is needed.
 }
 
-
-// convert a reference to row and column indices.
 void parseCellReference(const char *ref, int *row, int *col) {
     *col = 0;
     int i = 0;
