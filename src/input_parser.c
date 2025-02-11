@@ -18,6 +18,17 @@ int parseInput(char *input, Spreadsheet *spreadsheet) {
         printf("Exiting the spreadsheet. Goodbye!\n");
         return 0;
     }
+    if (strcmp(input, "disable_output") == 0) {
+        printf("Disabled output: Please Type \"enable_output\" to enable output!\n");
+        spreadsheet->display=1;
+        return 1;
+    }
+    if (strcmp(input, "enable_output") == 0) {
+        printf("Output enabled!\n");
+        spreadsheet->display=0;
+        printSpreadsheet(spreadsheet);
+        return 1;
+    }
 
     // Scroll commands.
     if (strcmp(input, "w") == 0) {

@@ -12,6 +12,7 @@ Spreadsheet *initializeSpreadsheet(int rows, int cols) {
         perror("Failed to allocate memory for Spreadsheet");
         exit(EXIT_FAILURE);
     }
+    spreadsheet->display = 0;
     spreadsheet->rows = rows;
     spreadsheet->cols = cols;
     spreadsheet->startRow = 0;
@@ -54,6 +55,10 @@ void getColumnLabel(int colIndex, char *label) {
 // Print the specified portion of the spreadsheet without grid borders.
 // Each cell (and header) is printed in a field of width 12.
 void printSpreadsheet(Spreadsheet *spreadsheet) {
+    if (spreadsheet->display == 1)
+    {
+        return;
+    }
     int endRow = (spreadsheet->startRow + 10 < spreadsheet->rows) ? spreadsheet->startRow + 10 : spreadsheet->rows;
     int endCol = (spreadsheet->startCol + 10 < spreadsheet->cols) ? spreadsheet->startCol + 10 : spreadsheet->cols;
 

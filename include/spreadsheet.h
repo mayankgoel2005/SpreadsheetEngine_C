@@ -6,6 +6,7 @@
 
 typedef struct Spreadsheet {
     int rows, cols;
+    int display;
     int startRow, startCol; // For scrolling purposes.
     Cell **table;
 } Spreadsheet;
