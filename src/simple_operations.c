@@ -294,7 +294,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
     if (strchr(input, '(') != NULL) {
         char targetRef[10], opStr[10], paramStr[30];
         char extra[100];
-        if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])%9s", targetRef, opStr, paramStr, extra) == 4) {
+        if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])%9s\n", targetRef, opStr, paramStr, extra) == 4) {
             end = clock();
             cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time  += cpu_time_used;
@@ -549,7 +549,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             end = clock();
             cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time += cpu_time_used;
-            printf("[%.2f] (ok)", spreadsheet->time);
+            printf("[%.2f] (ok)\n", spreadsheet->time);
         } else {
             // No operator: direct assignment.
             if (isalpha(rhs[0])) {
@@ -584,7 +584,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             end = clock();
             cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time += cpu_time_used;
-            printf("[%.2f] (ok)", spreadsheet->time);
+            printf("[%.2f] (ok)\n", spreadsheet->time);
         }
     }
 }
