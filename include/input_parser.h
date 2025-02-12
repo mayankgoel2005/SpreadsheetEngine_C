@@ -4,6 +4,6 @@
 
 #include "spreadsheet.h"
 
-int parseInput(char *input, Spreadsheet *spreadsheet);
+int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start);
 
 #endif // INPUT_PARSER_H

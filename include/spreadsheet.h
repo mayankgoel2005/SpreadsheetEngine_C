@@ -7,6 +7,7 @@ typedef struct Spreadsheet {
     int display;
     int rows;
     int cols;
+    float time;
     int startRow;
     int startCol;
     Cell **table;
@@ -19,6 +20,6 @@ typedef struct Spreadsheet {
 Spreadsheet *initializeSpreadsheet(int rows, int cols);
 void printSpreadsheet(Spreadsheet *spreadsheet);
 void freeSpreadsheet(Spreadsheet *spreadsheet);
-void handleOperation(const char *input, Spreadsheet *spreadsheet);
+void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start);
 
 #endif  // SPREADSHEET_H

@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
 
 typedef struct AVLNode AVLNode;
 

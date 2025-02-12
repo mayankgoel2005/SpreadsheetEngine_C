@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include "spreadsheet.h"
 #include "input_parser.h"
+#include <time.h>
 
 #define MAX_INPUT_SIZE 100
 
@@ -10,7 +11,7 @@ int main(int argc, char *argv[]) {
         printf("Usage: %s <rows> <cols>\n", argv[0]);
         return 1;
     }
-
+    
     int rows = atoi(argv[1]);
     int cols = atoi(argv[2]);
     if (rows >= 1000 || rows <= 0)
@@ -32,6 +33,10 @@ int main(int argc, char *argv[]) {
 
     char input[MAX_INPUT_SIZE];
     while (1) {
+        clock_t start, end;
+        double cpu_time_used;
+        start = clock();
+        
         printf("> ");
         if (!fgets(input, sizeof(input), stdin)) {
             printf("( unrecognized cmd ) ");
@@ -39,7 +44,7 @@ int main(int argc, char *argv[]) {
         }
 
         // Parse the input and handle commands
-        if (!parseInput(input, spreadsheet)) {
+        if (!parseInput(input, spreadsheet, start)) {
             break;
         }
     }

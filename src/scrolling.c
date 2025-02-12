@@ -9,7 +9,7 @@ void scrollUp(Spreadsheet *spreadsheet) {
             spreadsheet->startRow = 0;
         }
     }
-    printf("Scrolled up.\n");
+
 }
 
 // Scroll down by 10 rows
@@ -20,7 +20,7 @@ void scrollDown(Spreadsheet *spreadsheet) {
             spreadsheet->startRow = spreadsheet->rows - 10;
         }
     }
-    printf("Scrolled down.\n");
+
 }
 
 // Scroll left by 10 columns
@@ -31,7 +31,7 @@ void scrollLeft(Spreadsheet *spreadsheet) {
             spreadsheet->startCol = 0;
         }
     }
-    printf("Scrolled left.\n");
+
 }
 
 // Scroll right by 10 columns
@@ -42,7 +42,7 @@ void scrollRight(Spreadsheet *spreadsheet) {
             spreadsheet->startCol = spreadsheet->cols - 10;
         }
     }
-    printf("Scrolled right.\n");
+
 }
 
 void scrollTo(Spreadsheet *spreadsheet, int row, int col) {

@@ -21,6 +21,9 @@
 void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet);
 void parseCellReference(const char *ref, int *row, int *col);
 
+clock_t end;
+double cpu_time_used;
+
 typedef struct Node {
     Cell *cell;
     struct Node *next;
@@ -303,24 +306,33 @@ static void recalcAllAdvancedFormulas(Spreadsheet *spreadsheet) {
 }
 
 // handleOperation: Processes input commands.
-void handleOperation(const char *input, Spreadsheet *spreadsheet) {
+void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start) {
     // If input contains '(', treat as advanced operation.
     if (strchr(input, '(') != NULL) {
         char targetRef[10], opStr[10], paramStr[30];
         char extra[100];
         if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])%9s", targetRef, opStr, paramStr, extra) == 4) {
-            printf("Error: Invalid input format, unexpected characters found after function.\n");
+            end = clock();
+            cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+            spreadsheet->time  += cpu_time_used;
+            printf("[%.2f] Error: Invalid input format, unexpected characters found after function.\n", spreadsheet->time);
             return;
         } else if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])", targetRef, opStr, paramStr) != 3) {
-            printf("Error: Invalid advanced formula format.\n");
+            end = clock();
+            cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+            spreadsheet->time += cpu_time_used;
+            printf("[%.2f] Error: Invalid advanced formula format.\n", spreadsheet->time);
             return;
         }
         int targetRow, targetCol;
         parseCellReference(targetRef, &targetRow, &targetCol);
         if (targetRow < 0 || targetRow >= spreadsheet->rows ||
             targetCol < 0 || targetCol >= spreadsheet->cols) {
-            printf("Error: Target cell %s is out of bounds.\n", targetRef);
-            return;
+            end = clock();
+            cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+            spreadsheet->time += cpu_time_used;
+            printf("[%.2f] Error: Target cell %s is out of bounds.\n", spreadsheet->time, targetRef);
+           return;
         }
         Cell *targetCell = &spreadsheet->table[targetRow][targetCol];
         clearDependencies(targetCell);
@@ -337,12 +349,19 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
             result = seconds;
             opCode = OP_SLEEP;
             rStart = cStart = rEnd = cEnd = -1;
+            end = clock();
+            cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+            spreadsheet->time += cpu_time_used;
+            printf("[%.2f] (ok) \n", spreadsheet->time);
         } else {
             char startRef[10], endRef[10];
             const char *colon = strchr(paramStr, ':');
             if (!colon) {
-                printf("Error: Invalid range format: %s\n", paramStr);
-                return;
+                end = clock();
+                cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+                spreadsheet->time += cpu_time_used;
+                printf("[%.2f] Error: Invalid range format: %s\n", spreadsheet->time,  paramStr);
+               return;
             }
             size_t len1 = colon - paramStr;
             strncpy(startRef, paramStr, len1);
@@ -351,8 +370,11 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
             parseCellReference(startRef, &rStart, &cStart);
             parseCellReference(endRef, &rEnd, &cEnd);
             if (rStart > rEnd || cStart > cEnd) {
-                printf("Error: Invalid range order: %s (should be top-left:bottom-right).\n", paramStr);
-                return;
+                end = clock();
+                cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+                spreadsheet->time += cpu_time_used;
+                printf("[%.2f] Error: Invalid range order: %s (should be top-left:bottom-right).\n", spreadsheet->time, paramStr);
+               return;
             }
             long sum = 0;
             int count = 0, minVal = INT_MAX, maxVal = INT_MIN;
@@ -390,8 +412,11 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
                 result = (int) stdev;
                 opCode = OP_ADV_STDEV;
             } else {
-                printf("Error: Unsupported advanced operation '%s'.\n", opStr);
-                return;
+                end = clock();
+                cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+                spreadsheet->time += cpu_time_used;
+                printf("[%.2f] Error: Unsupported advanced operation '%s'.\n",spreadsheet->time, opStr);
+               return;
             }
         }
         targetCell->op = opCode;
@@ -408,12 +433,19 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
 
         recalcAllAdvancedFormulas(spreadsheet);
         printSpreadsheet(spreadsheet);
+        end = clock();
+        cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+        spreadsheet->time += cpu_time_used;
+        printf("[%.2f] (ok) \n", spreadsheet->time);
     } else {
         // Simple Operation branch.
         char targetRef[10], rhs[100];
         if (sscanf(input, "%9[^=]=%99s", targetRef, rhs) != 2) {
-            printf("Error: Invalid input format.\n");
-            return;
+            end = clock();
+            cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+            spreadsheet->time += cpu_time_used;
+            printf("[%.2f] Error: Invalid input format.\n", spreadsheet->time);
+           return;
         }
         int targetRow, targetCol;
         parseCellReference(targetRef, &targetRow, &targetCol);
@@ -425,8 +457,11 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
             char operand1Str[20], operand2Str[20];
             char opChar;
             if (sscanf(rhs, "%19[^+*/-]%c%19s", operand1Str, &opChar, operand2Str) != 3) {
-                printf("Error: Invalid binary operation format.\n");
-                return;
+                end = clock();
+                cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+                spreadsheet->time += cpu_time_used;
+                printf("[%.2f] Error: Invalid binary operation format.\n", spreadsheet->time);
+               return;
             }
             int operand1IsLiteral = 0, operand2IsLiteral = 0;
             int literal1 = 0, literal2 = 0;
@@ -435,14 +470,20 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
                 int row1, col1;
                 parseCellReference(operand1Str, &row1, &col1);
                 if (row1 < 0 || row1 >= spreadsheet->rows || col1 < 0 || col1 >= spreadsheet->cols) {
-                    printf("Error: Operand cell %s is out of bounds.\n", operand1Str);
-                    return;
+                    end = clock();
+                    cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+                    spreadsheet->time += cpu_time_used;
+                    printf("[%.2f] Error: Operand cell %s is out of bounds.\n",spreadsheet->time, operand1Str);
+                   return;
                 }
                 operand1 = &spreadsheet->table[row1][col1];
             } else {
                 if (sscanf(operand1Str, "%d", &literal1) != 1) {
-                    printf("Error: Invalid literal operand '%s'.\n", operand1Str);
-                    return;
+                    end = clock();
+                    cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+                    spreadsheet->time += cpu_time_used;
+                    printf("[%.2f] Error: Invalid literal operand '%s'.\n", spreadsheet->time, operand1Str);
+                   return;
                 }
                 operand1IsLiteral = 1;
             }
@@ -450,14 +491,20 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
                 int row2, col2;
                 parseCellReference(operand2Str, &row2, &col2);
                 if (row2 < 0 || row2 >= spreadsheet->rows || col2 < 0 || col2 >= spreadsheet->cols) {
-                    printf("Error: Operand cell %s is out of bounds.\n", operand2Str);
-                    return;
+                    end = clock();
+                    cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+                    spreadsheet->time += cpu_time_used;
+                    printf("[%.2f] Error: Operand cell %s is out of bounds.\n",spreadsheet->time, operand2Str);
+                   return;
                 }
                 operand2 = &spreadsheet->table[row2][col2];
             } else {
                 if (sscanf(operand2Str, "%d", &literal2) != 1) {
-                    printf("Error: Invalid literal operand '%s'.\n", operand2Str);
-                    return;
+                    end = clock();
+                    cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+                    spreadsheet->time += cpu_time_used;
+                    printf("[%.2f] Error: Invalid literal operand '%s'.\n", spreadsheet->time, operand2Str);
+                   return;
                 }
                 operand2IsLiteral = 1;
             }
@@ -476,16 +523,22 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
                           targetCell->op = OP_MUL;
                           break;
                 case '/': if ((operand2IsLiteral ? literal2 : operand2->value) == 0) {
-                              printf("Error: Division by zero.\n");
-                              return;
+                            end = clock();
+                            cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+                            spreadsheet->time += cpu_time_used;
+                              printf("[%.2f] Error: Division by zero.\n", spreadsheet->time);
+                             return;
                           }
                           result = (operand1IsLiteral ? literal1 : operand1->value) /
                                    (operand2IsLiteral ? literal2 : operand2->value);
                           targetCell->op = OP_DIV;
                           break;
                 default:
-                          printf("Error: Unsupported operation '%c'.\n", opChar);
-                          return;
+                         end = clock();
+                         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+                         spreadsheet->time += cpu_time_used;
+                          printf("[%.2f] Error: Unsupported operation '%c'.\n",spreadsheet->time, opChar);
+                         return;
             }
             targetCell->value = result;
             targetCell->operand1IsLiteral = operand1IsLiteral;
@@ -507,14 +560,21 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
             recalcUsingTopoOrder(targetCell, spreadsheet);
             recalcAllAdvancedFormulas(spreadsheet);
             printSpreadsheet(spreadsheet);
+            end = clock();
+            cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+            spreadsheet->time += cpu_time_used;
+            printf("[%.2f] (ok)", spreadsheet->time);
         } else {
             // Direct assignment.
             if (isalpha(rhs[0])) {
                 int row, col;
                 parseCellReference(rhs, &row, &col);
                 if (row < 0 || row >= spreadsheet->rows || col < 0 || col >= spreadsheet->cols) {
-                    printf("Error: Cell reference out of bounds (%s).\n", rhs);
-                    return;
+                    end = clock();
+                   cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+                    spreadsheet->time += cpu_time_used;
+                    printf("[%.2f] Error: Cell reference out of bounds (%s).\n", spreadsheet->time, rhs);
+                   return;
                 }
                 Cell *source = &spreadsheet->table[row][col];
                 targetCell->value = source->value;
@@ -523,8 +583,11 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
             } else {
                 int val;
                 if (sscanf(rhs, "%d", &val) != 1) {
-                    printf("Error: Invalid literal in assignment.\n");
-                    return;
+                    end = clock();
+                    cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+                    spreadsheet->time += cpu_time_used;
+                    printf("[%.2f] Error: Invalid literal in assignment.\n", spreadsheet->time);
+                   return;
                 }
                 targetCell->value = val;
             }
@@ -532,6 +595,10 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet) {
             recalcUsingTopoOrder(targetCell, spreadsheet);
             recalcAllAdvancedFormulas(spreadsheet);
             printSpreadsheet(spreadsheet);
+            end = clock();
+            cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+            spreadsheet->time += cpu_time_used;
+            printf("[%.2f] (ok)", spreadsheet->time);
         }
     }
 }
@@ -545,6 +612,7 @@ Spreadsheet *initializeSpreadsheet(int rows, int cols) {
     spreadsheet->display = 0;
     spreadsheet->rows = rows;
     spreadsheet->cols = cols;
+    spreadsheet->time = 0.0;
     spreadsheet->startRow = 0;
     spreadsheet->startCol = 0;
     spreadsheet->table = malloc(rows * sizeof(Cell *));
