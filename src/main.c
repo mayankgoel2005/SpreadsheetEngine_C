@@ -33,8 +33,7 @@ int main(int argc, char *argv[]) {
 
     char input[MAX_INPUT_SIZE];
     while (1) {
-        clock_t start, end;
-        double cpu_time_used;
+        clock_t start;
         start = clock();
         
         printf("> ");

@@ -4,7 +4,7 @@
 #include "cell.h"
 #include "avl_tree.h"  
 
-void initCell(Cell *cell) {
+void initCell(Cell *cell,int selfrow,int selfcol) {
     cell->value = 0;
     cell->op = OP_NONE;
     cell->row1 = cell->col1 = cell->row2 = cell->col2 = -1;
@@ -16,6 +16,8 @@ void initCell(Cell *cell) {
     cell->operand2IsLiteral = 0;
     cell->operand2Literal = 0;
     cell->operand2 = NULL;
+    cell->selfRow=selfrow;
+    cell->selfCol=selfcol;
 }
 
 void freeCell(Cell *cell) {

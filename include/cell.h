@@ -5,11 +5,11 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <time.h>
 
+/* Forward declaration for AVLNode */
 typedef struct AVLNode AVLNode;
 
-// Operation codes.
+/* Operation codes */
 #define OP_NONE       0
 #define OP_ADD        1
 #define OP_SUB        2
@@ -26,10 +26,9 @@ typedef struct AVLNode AVLNode;
 typedef struct Cell {
     int value;
     int op;
-    // For advanced formulas: store the range.
     int row1, col1, row2, col2;
     
-    // For simple formulas.
+    /* For simple formulas */
     int operand1IsLiteral;
     int operand1Literal;
     struct Cell *operand1;
@@ -37,12 +36,15 @@ typedef struct Cell {
     int operand2Literal;
     struct Cell *operand2;
     
-    // Dependency tracking.
+    /* Dependency tracking */
     AVLNode *dependencies;  // cells this cell depends on.
     AVLNode *dependents;    // cells that depend on this cell.
+    int selfRow;
+    int selfCol;
 } Cell;
 
-void initCell(Cell *cell);
+void initCell(Cell *cell,int selfrow,int selfcol);
+
 void freeCell(Cell *cell);
 void parseCellReference(const char *ref, int *row, int *col);
 
