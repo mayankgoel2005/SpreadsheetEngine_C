@@ -3,6 +3,7 @@
 #define INPUT_PARSER_H
 
 #include "spreadsheet.h"
+#include <time.h>
 
 int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start);
 

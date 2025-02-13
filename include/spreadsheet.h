@@ -2,7 +2,7 @@
 #define SPREADSHEET_H
 
 #include "cell.h"
-
+#include <time.h>
 typedef struct Spreadsheet {
     int display;
     int rows;
