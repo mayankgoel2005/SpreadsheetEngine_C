@@ -610,6 +610,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             } else {
                 targetCell->operand2Literal = literal2;
             }
+            removeAdvancedFormula(spreadsheet, targetCell);
             recalcUsingTopoOrder(targetCell, spreadsheet);
             recalcAllAdvancedFormulas(spreadsheet);
             printSpreadsheet(spreadsheet);
@@ -644,6 +645,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 targetCell->value = val;
             }
             targetCell->op = OP_NONE;
+            removeAdvancedFormula(spreadsheet, targetCell);
             recalcUsingTopoOrder(targetCell, spreadsheet);
             recalcAllAdvancedFormulas(spreadsheet);
             printSpreadsheet(spreadsheet);
