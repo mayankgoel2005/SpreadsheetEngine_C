@@ -18,6 +18,7 @@ void initCell(Cell *cell,int selfrow,int selfcol) {
     cell->operand2 = NULL;
     cell->selfRow=selfrow;
     cell->selfCol=selfcol;
+    cell->error=0;
 }
 
 void freeCell(Cell *cell) {

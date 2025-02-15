@@ -1,366 +1,423 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
-#include <math.h>
-#include <limits.h>
-#include <unistd.h>      
-#include <time.h>
-#include "cell.h"
-#include "spreadsheet.h"
-#include "avl_tree.h"
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <ctype.h>
+ #include <math.h>
+ #include <limits.h>
+ #include <unistd.h>
+ #include <time.h>
+ #include "cell.h"
+ #include "spreadsheet.h"
+ #include "avl_tree.h"
+ 
+ /* Operation codes for advanced formulas */
+ #define OP_ADV_SUM    5
+ #define OP_ADV_MIN    6
+ #define OP_ADV_MAX    7
+ #define OP_ADV_AVG    8
+ #define OP_ADV_STDEV  9
+ #define OP_SLEEP      10  
+ 
+ /* Operation codes for simple formulas */
+ #define OP_ADD        1
+ #define OP_SUB        2
+ #define OP_MUL        3
+ #define OP_DIV        4
+ #define OP_NONE       0
 
-#define OP_ADV_SUM    5
-#define OP_ADV_MIN    6
-#define OP_ADV_MAX    7
-#define OP_ADV_AVG    8
-#define OP_ADV_STDEV  9
-#define OP_SLEEP      10  
+ clock_t global_end;
+ double global_cpu_time_used;
 
-#define OP_ADD        1
-#define OP_SUB        2
-#define OP_MUL        3
-#define OP_DIV        4
-#define OP_NONE       0
+ typedef struct Node {
+     Cell *cell;
+     struct Node *next;
+ } Node;
+ 
+ void enqueue(Node **head, Node **tail, Cell *cell) {
+     Node *newNode = malloc(sizeof(Node));
+     if (!newNode) {
+         perror("Failed to allocate Node");
+         exit(EXIT_FAILURE);
+     }
+     newNode->cell = cell;
+     newNode->next = NULL;
+     if (*tail == NULL) {
+         *head = *tail = newNode;
+     } else {
+         (*tail)->next = newNode;
+         *tail = newNode;
+     }
+ }
+ 
+ Cell *dequeue(Node **head, Node **tail) {
+     if (*head == NULL)
+         return NULL;
+     Node *temp = *head;
+     Cell *cell = temp->cell;
+     *head = temp->next;
+     if (*head == NULL)
+         *tail = NULL;
+     free(temp);
+     return cell;
+ }
+ 
+ typedef struct {
+     Node **head;
+     Node **tail;
+ } LLQueueData;
+ 
+ void bfs_enqueue_callback_ll(Cell *cell, void *data) {
+     LLQueueData *qdata = (LLQueueData *) data;
+     enqueue(qdata->head, qdata->tail, cell);
+ }
 
-clock_t global_end;
-double global_cpu_time_used;
-
-typedef struct Node {
-    Cell *cell;
-    struct Node *next;
-} Node;
-
-void enqueue(Node **head, Node **tail, Cell *cell) {
-    Node *newNode = malloc(sizeof(Node));
-    if (!newNode) {
-        perror("Failed to allocate Node");
-        exit(EXIT_FAILURE);
-    }
-    newNode->cell = cell;
-    newNode->next = NULL;
-    if (*tail == NULL) {
-        *head = *tail = newNode;
-    } else {
-        (*tail)->next = newNode;
-        *tail = newNode;
-    }
-}
-
-Cell *dequeue(Node **head, Node **tail) {
-    if (*head == NULL)
-        return NULL;
-    Node *temp = *head;
-    Cell *cell = temp->cell;
-    *head = temp->next;
-    if (*head == NULL)
-        *tail = NULL;
-    free(temp);
-    return cell;
-}
-
-typedef struct {
-    Node **head;
-    Node **tail;
-} LLQueueData;
-
-void bfs_enqueue_callback_ll(Cell *cell, void *data) {
-    LLQueueData *qdata = (LLQueueData *) data;
-    enqueue(qdata->head, qdata->tail, cell);
-}
-
-static void remove_dependent_callback(Cell *source, void *target_ptr) {
-    Cell *target = (Cell *) target_ptr;
-    source->dependents = avl_delete(source->dependents, target, avl_cell_compare);
-}
-
-void clearDependencies(Cell *cell) {
-    if (cell->dependencies) {
-        avl_traverse(cell->dependencies, remove_dependent_callback, cell);
-        avl_free(cell->dependencies);
-        cell->dependencies = NULL;
-    }
-}
-
-void addDependency(Cell *targetCell, Cell *source) {
-    targetCell->dependencies = avl_insert(targetCell->dependencies, source, avl_cell_compare);
-}
-
-void addDependent(Cell *sourceCell, Cell *target) {
-    sourceCell->dependents = avl_insert(sourceCell->dependents, target, avl_cell_compare);
-}
-
-void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
-    if (cell->op != 0) {
-        /* Advanced operations */
-        if (cell->op >= OP_ADV_SUM && cell->op <= OP_ADV_STDEV) {
-            int rStart = cell->row1, cStart = cell->col1;
-            int rEnd = cell->row2, cEnd = cell->col2;
-            long sum = 0;
-            int count = 0, minVal = INT_MAX, maxVal = INT_MIN;
-            for (int r = rStart; r <= rEnd; r++) {
-                for (int c = cStart; c <= cEnd; c++) {
-                    int val = spreadsheet->table[r][c].value;
-                    sum += val;
-                    if (val < minVal) minVal = val;
-                    if (val > maxVal) maxVal = val;
-                    count++;
-                }
-            }
-            int result = 0;
-            switch (cell->op) {
-                case OP_ADV_SUM: result = (int) sum; break;
-                case OP_ADV_MIN: result = minVal; break;
-                case OP_ADV_MAX: result = maxVal; break;
-                case OP_ADV_AVG: result = (count > 0) ? (int)(sum / count) : 0; break;
-                case OP_ADV_STDEV: {
-                    double mean = (count > 0) ? (double) sum / count : 0.0;
-                    double sqDiffSum = 0.0;
-                    for (int r = rStart; r <= rEnd; r++) {
-                        for (int c = cStart; c <= cEnd; c++) {
-                            double diff = spreadsheet->table[r][c].value - mean;
-                            sqDiffSum += diff * diff;
-                        }
-                    }
-                    double stdev = (count > 0) ? sqrt(sqDiffSum / count) : 0.0;
-                    result = (int) stdev;
-                    break;
-                }
-                default: break;
-            }
-            cell->value = result;
-        }
-        else if (cell->op == OP_SLEEP) {
-            /* Do nothing */
-        }
-        else {
-            int op1 = cell->operand1IsLiteral ? cell->operand1Literal : (cell->operand1 ? cell->operand1->value : 0);
-            int op2 = cell->operand2IsLiteral ? cell->operand2Literal : (cell->operand2 ? cell->operand2->value : 0);
-            switch (cell->op) {
-                case OP_ADD: cell->value = op1 + op2; break;
-                case OP_SUB: cell->value = op1 - op2; break;
-                case OP_MUL: cell->value = op1 * op2; break;
-                case OP_DIV:
-                    if (op2 != 0)
-                        cell->value = op1 / op2;
-                    else {
-                        printf("Error: Division by zero in simple formula recalculation.\n");
-                        return;
-                    }
-                    break;
-                default: break;
-            }
-        }
-    }
-}
-
-int findAffectedIndex(Cell **arr, int count, Cell *cell) {
-    for (int i = 0; i < count; i++) {
-        if (arr[i] == cell)
-            return i;
-    }
-    return -1;
-}
-
-typedef struct {
-    Cell **affected;
-    int affectedCount;
-    int targetIndex;
-    int *inDegree;
-} DepCallbackData;
-
-void dep_check_callback(Cell *dep, void *data) {
-    DepCallbackData *dData = (DepCallbackData *) data;
-    int idx = findAffectedIndex(dData->affected, dData->affectedCount, dep);
-    if (idx != -1) {
-        dData->inDegree[dData->targetIndex]++;
-    }
-}
-
-typedef struct {
-    Cell **affected;
-    int affectedCount;
-    int *inDegree;
-    int *zeroQueue;
-    int *zeroQueueSize;
-} ProcessDepData;
-
-void process_dependent_callback(Cell *dep, void *data) {
-    ProcessDepData *pData = (ProcessDepData *) data;
-    int idx = findAffectedIndex(pData->affected, pData->affectedCount, dep);
-    if (idx != -1) {
-        pData->inDegree[idx]--;
-        if (pData->inDegree[idx] == 0) {
-            pData->zeroQueue[*(pData->zeroQueueSize)] = idx;
-            (*(pData->zeroQueueSize))++;
-        }
-    }
-}
-
-void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
-    Node *queueHead = NULL, *queueTail = NULL;
-    LLQueueData llData;
-    llData.head = &queueHead;
-    llData.tail = &queueTail;
-    
-    int affectedCapacity = 100, affectedCount = 0;
-    Cell **affected = malloc(affectedCapacity * sizeof(Cell *));
-
-    if (start->dependents) {
-        avl_traverse(start->dependents, bfs_enqueue_callback_ll, &llData);
-    }
-    while (queueHead != NULL) {
-        Cell *curr = dequeue(&queueHead, &queueTail);
-        if (affectedCount >= affectedCapacity) {
-            affectedCapacity *= 2;
-            affected = realloc(affected, affectedCapacity * sizeof(Cell *));
-        }
-        affected[affectedCount++] = curr;
-        if (curr->dependents)
-            avl_traverse(curr->dependents, bfs_enqueue_callback_ll, &llData);
-    }
-    
-    int *inDegree = malloc(affectedCount * sizeof(int));
-    for (int i = 0; i < affectedCount; i++) {
-        inDegree[i] = 0;
-        if (affected[i]->dependencies) {
-            DepCallbackData depData;
-            depData.affected = affected;
-            depData.affectedCount = affectedCount;
-            depData.targetIndex = i;
-            depData.inDegree = inDegree;
-            avl_traverse(affected[i]->dependencies, dep_check_callback, &depData);
-        }
-    }
-    
-    int *zeroQueue = malloc(affectedCount * sizeof(int));
-    int zeroQueueSize = 0;
-    for (int i = 0; i < affectedCount; i++) {
-        if (inDegree[i] == 0) {
-            zeroQueue[zeroQueueSize++] = i;
-        }
-    }
-    
-    ProcessDepData pData;
-    pData.affected = affected;
-    pData.affectedCount = affectedCount;
-    pData.inDegree = inDegree;
-    pData.zeroQueue = zeroQueue;
-    pData.zeroQueueSize = &zeroQueueSize;
-    
-    int zeroQueueFront = 0;
-    int processedCount = 0;
-    while (zeroQueueFront < zeroQueueSize) {
-        int idx = zeroQueue[zeroQueueFront++];
-        Cell *cell = affected[idx];
-        recalc_cell(cell, spreadsheet);
-        processedCount++;
-        if (cell->dependents)
-            avl_traverse(cell->dependents, process_dependent_callback, &pData);
-    }
-    
-    if (processedCount != affectedCount) {
-        printf("Error: Cycle detected in dependencies. Recalculation aborted.\n");
-    }
-    
-    free(affected);
-    free(inDegree);
-    free(zeroQueue);
-}
-
-static void addAdvancedFormula(Spreadsheet *spreadsheet, Cell *cell) {
-    for (int i = 0; i < spreadsheet->advancedFormulasCount; i++) {
-        if (spreadsheet->advancedFormulas[i] == cell)
-            return;
-    }
-    if (spreadsheet->advancedFormulasCount >= spreadsheet->advancedFormulasCapacity) {
-        spreadsheet->advancedFormulasCapacity *= 2;
-        spreadsheet->advancedFormulas = realloc(spreadsheet->advancedFormulas,
-            spreadsheet->advancedFormulasCapacity * sizeof(Cell *));
-        if (!spreadsheet->advancedFormulas) {
-            perror("Failed to reallocate advanced formulas array");
-            exit(EXIT_FAILURE);
-        }
-    }
-    spreadsheet->advancedFormulas[spreadsheet->advancedFormulasCount++] = cell;
-}
-
-static void removeAdvancedFormula(Spreadsheet *spreadsheet, Cell *cell) {
-    for (int i = 0; i < spreadsheet->advancedFormulasCount; i++) {
-        if (spreadsheet->advancedFormulas[i] == cell) {
-            spreadsheet->advancedFormulas[i] = spreadsheet->advancedFormulas[spreadsheet->advancedFormulasCount - 1];
-            spreadsheet->advancedFormulasCount--;
-            break;
-        }
-    }
-}
-
-static void recalcAllAdvancedFormulas(Spreadsheet *spreadsheet) {
-    int count = spreadsheet->advancedFormulasCount;
-    if (count == 0)
-         return;
-    int *inDegree = malloc(count * sizeof(int));
-    for (int i = 0; i < count; i++) {
-         inDegree[i] = 0;
-    }
-
-    for (int i = 0; i < count; i++) {
-         Cell *X = spreadsheet->advancedFormulas[i];
-         for (int j = 0; j < count; j++) {
-             if (i == j) continue;
-             Cell *Y = spreadsheet->advancedFormulas[j];
-             if (Y->selfRow >= X->row1 && Y->selfRow <= X->row2 &&
-                 Y->selfCol >= X->col1 && Y->selfCol <= X->col2) {
-                 inDegree[i]++;
+ static void remove_dependent_callback(Cell *source, void *target_ptr) {
+     Cell *target = (Cell *) target_ptr;
+     source->dependents = avl_delete(source->dependents, target, avl_cell_compare);
+ }
+ 
+ void clearDependencies(Cell *cell) {
+     if (cell->dependencies) {
+         avl_traverse(cell->dependencies, remove_dependent_callback, cell);
+         avl_free(cell->dependencies);
+         cell->dependencies = NULL;
+     }
+ }
+ 
+ void addDependency(Cell *targetCell, Cell *source) {
+     targetCell->dependencies = avl_insert(targetCell->dependencies, source, avl_cell_compare);
+ }
+ 
+ void addDependent(Cell *sourceCell, Cell *target) {
+     sourceCell->dependents = avl_insert(sourceCell->dependents, target, avl_cell_compare);
+ }
+ 
+ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
+     if (cell->op != OP_NONE) {
+         /* Advanced operations (range-based formulas) */
+         if (cell->op >= OP_ADV_SUM && cell->op <= OP_ADV_STDEV) {
+             int rStart = cell->row1, cStart = cell->col1;
+             int rEnd = cell->row2, cEnd = cell->col2;
+             long sum = 0;
+             int count = 0, minVal = INT_MAX, maxVal = INT_MIN;
+             int foundError = 0;
+             for (int r = rStart; r <= rEnd; r++) {
+                 for (int c = cStart; c <= cEnd; c++) {
+                     Cell *curr = &spreadsheet->table[r][c];
+                     if (curr->error) {
+                        foundError = 1;
+                     }
+                     int val = curr->value;
+                     sum += val;
+                     if (val < minVal) minVal = val;
+                     if (val > maxVal) maxVal = val;
+                     count++;
+                 }
+             }
+             if (foundError) {
+                 cell->error = 1;
+                 return;
+             }
+             int result = 0;
+             switch (cell->op) {
+                 case OP_ADV_SUM: result = (int) sum; break;
+                 case OP_ADV_MIN: result = minVal; break;
+                 case OP_ADV_MAX: result = maxVal; break;
+                 case OP_ADV_AVG: result = (count > 0) ? (int)(sum / count) : 0; break;
+                 case OP_ADV_STDEV: {
+                     double mean = (count > 0) ? (double) sum / count : 0.0;
+                     double sqDiffSum = 0.0;
+                     for (int r = rStart; r <= rEnd; r++) {
+                         for (int c = cStart; c <= cEnd; c++) {
+                             double diff = spreadsheet->table[r][c].value - mean;
+                             sqDiffSum += diff * diff;
+                         }
+                     }
+                     double stdev = (count > 0) ? sqrt(sqDiffSum / count) : 0.0;
+                     result = (int) stdev;
+                     break;
+                 }
+                 default: break;
+             }
+             cell->value = result;
+             cell->error = 0;
+         }
+         else if (cell->op == OP_SLEEP) {
+             /* SLEEP: no recalculation needed */
+         }
+         else {
+             /* Simple operations: propagate error if any operand is in error */
+             if ((!cell->operand1IsLiteral && cell->operand1 && cell->operand1->error) ||
+                 (!cell->operand2IsLiteral && cell->operand2 && cell->operand2->error)) {
+                 cell->error = 1;
+                 return;
+             }
+             int op1 = cell->operand1IsLiteral ? cell->operand1Literal : (cell->operand1 ? cell->operand1->value : 0);
+             int op2 = cell->operand2IsLiteral ? cell->operand2Literal : (cell->operand2 ? cell->operand2->value : 0);
+             switch (cell->op) {
+                 case OP_ADD:
+                     cell->value = op1 + op2;
+                     cell->error = 0;
+                     break;
+                 case OP_SUB:
+                     cell->value = op1 - op2;
+                     cell->error = 0;
+                     break;
+                 case OP_MUL:
+                     cell->value = op1 * op2;
+                     cell->error = 0;
+                     break;
+                 case OP_DIV:
+                     if (op2 == 0) {
+                         printf("Error: Division by zero in simple formula recalculation.\n");
+                         cell->error = 1;
+                         return;
+                     } else {
+                         cell->value = op1 / op2;
+                         cell->error = 0;
+                     }
+                     break;
+                 default:
+                     break;
              }
          }
-    }
-    int *zeroQueue = malloc(count * sizeof(int));
-    int zeroQueueSize = 0;
-    for (int i = 0; i < count; i++) {
+     }
+ }
+
+ int findAffectedIndex(Cell **arr, int count, Cell *cell) {
+     for (int i = 0; i < count; i++) {
+         if (arr[i] == cell)
+             return i;
+     }
+     return -1;
+ }
+ 
+ typedef struct {
+     Cell **affected;
+     int affectedCount;
+     int targetIndex;
+     int *inDegree;
+ } DepCallbackData;
+ 
+ void dep_check_callback(Cell *dep, void *data) {
+     DepCallbackData *dData = (DepCallbackData *) data;
+     int idx = findAffectedIndex(dData->affected, dData->affectedCount, dep);
+     if (idx != -1) {
+         dData->inDegree[dData->targetIndex]++;
+     }
+ }
+ 
+ typedef struct {
+     Cell **affected;
+     int affectedCount;
+     int *inDegree;
+     int *zeroQueue;
+     int *zeroQueueSize;
+ } ProcessDepData;
+ 
+ void process_dependent_callback(Cell *dep, void *data) {
+     ProcessDepData *pData = (ProcessDepData *) data;
+     int idx = findAffectedIndex(pData->affected, pData->affectedCount, dep);
+     if (idx != -1) {
+         pData->inDegree[idx]--;
+         if (pData->inDegree[idx] == 0) {
+             pData->zeroQueue[*(pData->zeroQueueSize)] = idx;
+             (*(pData->zeroQueueSize))++;
+         }
+     }
+ }
+
+ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
+     Node *queueHead = NULL, *queueTail = NULL;
+     LLQueueData llData;
+     llData.head = &queueHead;
+     llData.tail = &queueTail;
+     
+     int affectedCapacity = 100, affectedCount = 0;
+     Cell **affected = malloc(affectedCapacity * sizeof(Cell *));
+     if (!affected) {
+         perror("Failed to allocate affected cells array");
+         exit(EXIT_FAILURE);
+     }
+ 
+     if (start->dependents) {
+         avl_traverse(start->dependents, bfs_enqueue_callback_ll, &llData);
+     }
+     while (queueHead != NULL) {
+         Cell *curr = dequeue(&queueHead, &queueTail);
+         if (affectedCount >= affectedCapacity) {
+             affectedCapacity *= 2;
+             affected = realloc(affected, affectedCapacity * sizeof(Cell *));
+             if (!affected) {
+                 perror("Failed to reallocate affected cells array");
+                 exit(EXIT_FAILURE);
+             }
+         }
+         affected[affectedCount++] = curr;
+         if (curr->dependents)
+             avl_traverse(curr->dependents, bfs_enqueue_callback_ll, &llData);
+     }
+     
+     int *inDegree = malloc(affectedCount * sizeof(int));
+     for (int i = 0; i < affectedCount; i++) {
+         inDegree[i] = 0;
+         if (affected[i]->dependencies) {
+             DepCallbackData depData;
+             depData.affected = affected;
+             depData.affectedCount = affectedCount;
+             depData.targetIndex = i;
+             depData.inDegree = inDegree;
+             avl_traverse(affected[i]->dependencies, dep_check_callback, &depData);
+         }
+     }
+     
+     int *zeroQueue = malloc(affectedCount * sizeof(int));
+     int zeroQueueSize = 0;
+     for (int i = 0; i < affectedCount; i++) {
          if (inDegree[i] == 0) {
              zeroQueue[zeroQueueSize++] = i;
          }
-    }
-    int processedCount = 0;
-    int *topoOrder = malloc(count * sizeof(int));
-    int topoIndex = 0;
-    while (zeroQueueSize > 0) {
-         int idx = zeroQueue[--zeroQueueSize]; // pop one
-         topoOrder[topoIndex++] = idx;
+     }
+     
+     ProcessDepData pData;
+     pData.affected = affected;
+     pData.affectedCount = affectedCount;
+     pData.inDegree = inDegree;
+     pData.zeroQueue = zeroQueue;
+     pData.zeroQueueSize = &zeroQueueSize;
+     
+     int zeroQueueFront = 0;
+     int processedCount = 0;
+     while (zeroQueueFront < zeroQueueSize) {
+         int idx = zeroQueue[zeroQueueFront++];
+         Cell *cell = affected[idx];
+         recalc_cell(cell, spreadsheet);
          processedCount++;
-         Cell *Y = spreadsheet->advancedFormulas[idx];
-         for (int j = 0; j < count; j++) {
-              if (j == idx) continue;
-              Cell *X = spreadsheet->advancedFormulas[j];
+         if (cell->dependents)
+             avl_traverse(cell->dependents, process_dependent_callback, &pData);
+     }
+     
+     if (processedCount != affectedCount) {
+         printf("Error: Cycle detected in dependencies. Recalculation aborted.\n");
+     }
+     
+     free(affected);
+     free(inDegree);
+     free(zeroQueue);
+ }
+
+ static void addAdvancedFormula(Spreadsheet *spreadsheet, Cell *cell) {
+     for (int i = 0; i < spreadsheet->advancedFormulasCount; i++) {
+         if (spreadsheet->advancedFormulas[i] == cell)
+             return;
+     }
+     if (spreadsheet->advancedFormulasCount >= spreadsheet->advancedFormulasCapacity) {
+         spreadsheet->advancedFormulasCapacity *= 2;
+         spreadsheet->advancedFormulas = realloc(spreadsheet->advancedFormulas,
+             spreadsheet->advancedFormulasCapacity * sizeof(Cell *));
+         if (!spreadsheet->advancedFormulas) {
+             perror("Failed to reallocate advanced formulas array");
+             exit(EXIT_FAILURE);
+         }
+     }
+     spreadsheet->advancedFormulas[spreadsheet->advancedFormulasCount++] = cell;
+ }
+ 
+ static void removeAdvancedFormula(Spreadsheet *spreadsheet, Cell *cell) {
+     for (int i = 0; i < spreadsheet->advancedFormulasCount; i++) {
+         if (spreadsheet->advancedFormulas[i] == cell) {
+             spreadsheet->advancedFormulas[i] = spreadsheet->advancedFormulas[spreadsheet->advancedFormulasCount - 1];
+             spreadsheet->advancedFormulasCount--;
+             break;
+         }
+     }
+ }
+ 
+ static void recalcAllAdvancedFormulas(Spreadsheet *spreadsheet) {
+     int count = spreadsheet->advancedFormulasCount;
+     if (count == 0)
+          return;
+     int *inDegree = malloc(count * sizeof(int));
+     for (int i = 0; i < count; i++) {
+          inDegree[i] = 0;
+     }
+ 
+     for (int i = 0; i < count; i++) {
+          Cell *X = spreadsheet->advancedFormulas[i];
+          for (int j = 0; j < count; j++) {
+              if (i == j) continue;
+              Cell *Y = spreadsheet->advancedFormulas[j];
               if (Y->selfRow >= X->row1 && Y->selfRow <= X->row2 &&
                   Y->selfCol >= X->col1 && Y->selfCol <= X->col2) {
-                   inDegree[j]--;
-                   if (inDegree[j] == 0) {
-                        zeroQueue[zeroQueueSize++] = j;
-                   }
+                  inDegree[i]++;
               }
-         }
-    }
-    if (processedCount != count) {
-         printf("Error: Cycle detected in advanced formulas.\n");
-         free(inDegree);
-         free(zeroQueue);
-         free(topoOrder);
-         return;
-    }
-    for (int i = 0; i < count; i++) {
-         int idx = topoOrder[i];
-         Cell *cell = spreadsheet->advancedFormulas[idx];
-         recalc_cell(cell, spreadsheet);
-         recalcUsingTopoOrder(cell, spreadsheet);
-    }
-    free(inDegree);
-    free(zeroQueue);
-    free(topoOrder);
-}
+          }
+     }
+     int *zeroQueue = malloc(count * sizeof(int));
+     int zeroQueueSize = 0;
+     for (int i = 0; i < count; i++) {
+          if (inDegree[i] == 0) {
+              zeroQueue[zeroQueueSize++] = i;
+          }
+     }
+     int processedCount = 0;
+     int *topoOrder = malloc(count * sizeof(int));
+     int topoIndex = 0;
+     while (zeroQueueSize > 0) {
+          int idx = zeroQueue[--zeroQueueSize]; // pop one
+          topoOrder[topoIndex++] = idx;
+          processedCount++;
+          Cell *Y = spreadsheet->advancedFormulas[idx];
+          for (int j = 0; j < count; j++) {
+               if (j == idx) continue;
+               Cell *X = spreadsheet->advancedFormulas[j];
+               if (Y->selfRow >= X->row1 && Y->selfRow <= X->row2 &&
+                   Y->selfCol >= X->col1 && Y->selfCol <= X->col2) {
+                    inDegree[j]--;
+                    if (inDegree[j] == 0) {
+                         zeroQueue[zeroQueueSize++] = j;
+                    }
+               }
+          }
+     }
+     if (processedCount != count) {
+          printf("Error: Cycle detected in advanced formulas.\n");
+          free(inDegree);
+          free(zeroQueue);
+          free(topoOrder);
+          return;
+     }
+     for (int i = 0; i < count; i++) {
+          int idx = topoOrder[i];
+          Cell *cell = spreadsheet->advancedFormulas[idx];
+          recalc_cell(cell, spreadsheet);
+          recalcUsingTopoOrder(cell, spreadsheet);
+     }
+     free(inDegree);
+     free(zeroQueue);
+     free(topoOrder);
+ }
 
 void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start) {
+    /* Check for output commands */
+    if (strcmp(input, "disable_output") == 0) {
+        spreadsheet->display = 1;
+        global_end = clock();
+        global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+        spreadsheet->time = global_cpu_time_used;
+        printf("[%.2f] (ok)\n", spreadsheet->time);
+        return;
+    }
+    if (strcmp(input, "enable_output") == 0) {
+        spreadsheet->display = 0;
+        global_end = clock();
+        global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+        spreadsheet->time = global_cpu_time_used;
+        printf("[%.2f] (ok)\n", spreadsheet->time);
+        return;
+    }
+
+    /* Advanced formulas contain parentheses */
     if (strchr(input, '(') != NULL) {
         char targetRef[10], opStr[10], paramStr[30];
         char extra[100];
@@ -390,21 +447,42 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         Cell *targetCell = &spreadsheet->table[targetRow][targetCol];
         clearDependencies(targetCell);
         removeAdvancedFormula(spreadsheet, targetCell);
-        
+
         int result = 0, opCode = 0;
-        int rStart, cStart, rEnd, cEnd;
+        int rStart = -1, cStart = -1, rEnd = -1, cEnd = -1;
+
         if (strcmp(opStr, "SLEEP") == 0) {
-            int seconds = atoi(paramStr);
+            int seconds = 0;
+            /* Check if paramStr is a cell reference */
+            if (isalpha(paramStr[0])) {
+                int row, col;
+                parseCellReference(paramStr, &row, &col);
+                if (row < 0 || row >= spreadsheet->rows || col < 0 || col >= spreadsheet->cols) {
+                    global_end = clock();
+                    global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+                    spreadsheet->time = global_cpu_time_used;
+                    printf("[%.2f] Error: Cell reference %s is out of bounds.\n", spreadsheet->time, paramStr);
+                    return;
+                }
+                Cell *source = &spreadsheet->table[row][col];
+                addDependency(targetCell, source);
+                addDependent(source, targetCell);
+                if (source->error) {
+                    targetCell->error = 1;
+                    printSpreadsheet(spreadsheet);
+                    return;
+                }
+                seconds = source->value;
+            } else {
+                seconds = atoi(paramStr);
+            }
             printf("Sleeping for %d seconds...\n", seconds);
             sleep(seconds);
             result = seconds;
             opCode = OP_SLEEP;
-            rStart = cStart = rEnd = cEnd = -1;
-            global_end = clock();
-            global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
-            spreadsheet->time = global_cpu_time_used;
-            printf("[%.2f] (ok) \n", spreadsheet->time);
+            /* For SLEEP, we don’t have a range; leave rStart, etc., as -1 */
         } else {
+            /* Handle other advanced operations that use a range */
             char startRef[10], endRef[10];
             const char *colon = strchr(paramStr, ':');
             if (!colon) {
@@ -470,6 +548,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 return;
             }
         }
+ 
         targetCell->op = opCode;
         targetCell->value = result;
         targetCell->row1 = rStart;
@@ -479,7 +558,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         if (opCode != OP_SLEEP) {
             addAdvancedFormula(spreadsheet, targetCell);
         }
-
+ 
         recalc_cell(targetCell, spreadsheet);
         recalcUsingTopoOrder(targetCell, spreadsheet);
         recalcAllAdvancedFormulas(spreadsheet);
@@ -487,8 +566,9 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         global_end = clock();
         global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = global_cpu_time_used;
-        printf("[%.2f] (ok) \n", spreadsheet->time);
+        printf("[%.2f] (ok)\n", spreadsheet->time);
     } else {
+        /* Simple assignment or reference branch here */
         char targetRef[10], rhs[100];
         if (sscanf(input, "%9[^=]=%99s", targetRef, rhs) != 2) {
             global_end = clock();
@@ -505,241 +585,252 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         }
         Cell *targetCell = &spreadsheet->table[targetRow][targetCol];
         clearDependencies(targetCell);
-        
-        if (strchr(rhs, '+') || strchr(rhs, '-') || strchr(rhs, '*') || strchr(rhs, '/')) {
-            char operand1Str[20], operand2Str[20];
-            char opChar;
-            if (sscanf(rhs, "%19[^+*/-]%c%19s", operand1Str, &opChar, operand2Str) != 3) {
-                global_end = clock();
-                global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
-                spreadsheet->time = global_cpu_time_used;
-                printf("[%.2f] Error: Invalid binary operation format.\n", spreadsheet->time);
-                return;
-            }
-            int operand1IsLiteral = 0, operand2IsLiteral = 0;
-            int literal1 = 0, literal2 = 0;
-            Cell *operand1 = NULL, *operand2 = NULL;
-            if (isalpha(operand1Str[0])) {
-                int row1, col1;
-                parseCellReference(operand1Str, &row1, &col1);
-                if (row1 < 0 || row1 >= spreadsheet->rows || col1 < 0 || col1 >= spreadsheet->cols) {
-                    global_end = clock();
-                    global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
-                    spreadsheet->time = global_cpu_time_used;
-                    printf("[%.2f] Error: Operand cell %s is out of bounds.\n", spreadsheet->time, operand1Str);
-                    return;
-                }
-                operand1 = &spreadsheet->table[row1][col1];
-            } else {
-                if (sscanf(operand1Str, "%d", &literal1) != 1) {
-                    global_end = clock();
-                    global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
-                    spreadsheet->time = global_cpu_time_used;
-                    printf("[%.2f] Error: Invalid literal operand '%s'.\n", spreadsheet->time, operand1Str);
-                    return;
-                }
-                operand1IsLiteral = 1;
-            }
-            if (isalpha(operand2Str[0])) {
-                int row2, col2;
-                parseCellReference(operand2Str, &row2, &col2);
-                if (row2 < 0 || row2 >= spreadsheet->rows || col2 < 0 || col2 >= spreadsheet->cols) {
-                    global_end = clock();
-                    global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
-                    spreadsheet->time = global_cpu_time_used;
-                    printf("[%.2f] Error: Operand cell %s is out of bounds.\n", spreadsheet->time, operand2Str);
-                    return;
-                }
-                operand2 = &spreadsheet->table[row2][col2];
-            } else {
-                if (sscanf(operand2Str, "%d", &literal2) != 1) {
-                    global_end = clock();
-                    global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
-                    spreadsheet->time = global_cpu_time_used;
-                    printf("[%.2f] Error: Invalid literal operand '%s'.\n", spreadsheet->time, operand2Str);
-                    return;
-                }
-                operand2IsLiteral = 1;
-            }
-            int result = 0;
-            switch (opChar) {
-                case '+': result = (operand1IsLiteral ? literal1 : operand1->value) +
-                                 (operand2IsLiteral ? literal2 : operand2->value);
-                          targetCell->op = OP_ADD;
-                          break;
-                case '-': result = (operand1IsLiteral ? literal1 : operand1->value) -
-                                 (operand2IsLiteral ? literal2 : operand2->value);
-                          targetCell->op = OP_SUB;
-                          break;
-                case '*': result = (operand1IsLiteral ? literal1 : operand1->value) *
-                                 (operand2IsLiteral ? literal2 : operand2->value);
-                          targetCell->op = OP_MUL;
-                          break;
-                case '/': if ((operand2IsLiteral ? literal2 : operand2->value) == 0) {
-                              global_end = clock();
-                              global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
-                              spreadsheet->time = global_cpu_time_used;
-                              printf("[%.2f] Error: Division by zero.\n", spreadsheet->time);
-                              return;
-                          }
-                          result = (operand1IsLiteral ? literal1 : operand1->value) /
-                                   (operand2IsLiteral ? literal2 : operand2->value);
-                          targetCell->op = OP_DIV;
-                          break;
-                default:
-                          global_end = clock();
-                          global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
-                          spreadsheet->time = global_cpu_time_used;
-                          printf("[%.2f] Error: Unsupported operation '%c'.\n", spreadsheet->time, opChar);
-                          return;
-            }
-            targetCell->value = result;
-            targetCell->operand1IsLiteral = operand1IsLiteral;
-            targetCell->operand2IsLiteral = operand2IsLiteral;
-            if (!operand1IsLiteral) {
-                targetCell->operand1 = operand1;
-                addDependency(targetCell, operand1);
-                addDependent(operand1, targetCell);
-            } else {
-                targetCell->operand1Literal = literal1;
-            }
-            if (!operand2IsLiteral) {
-                targetCell->operand2 = operand2;
-                addDependency(targetCell, operand2);
-                addDependent(operand2, targetCell);
-            } else {
-                targetCell->operand2Literal = literal2;
-            }
-            removeAdvancedFormula(spreadsheet, targetCell);
-            recalcUsingTopoOrder(targetCell, spreadsheet);
-            recalcAllAdvancedFormulas(spreadsheet);
-            printSpreadsheet(spreadsheet);
-            global_end = clock();
-            global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
-            spreadsheet->time = global_cpu_time_used;
-            printf("[%.2f] (ok)", spreadsheet->time);
-        } else {
-            if (isalpha(rhs[0])) {
-                int row, col;
-                parseCellReference(rhs, &row, &col);
-                if (row < 0 || row >= spreadsheet->rows || col < 0 || col >= spreadsheet->cols) {
-                    global_end = clock();
-                    global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
-                    spreadsheet->time = global_cpu_time_used;
-                    printf("[%.2f] Error: Cell reference out of bounds (%s).\n", spreadsheet->time, rhs);
-                    return;
-                }
-                Cell *source = &spreadsheet->table[row][col];
-                targetCell->value = source->value;
-                addDependency(targetCell, source);
-                addDependent(source, targetCell);
-            } else {
-                int val;
-                if (sscanf(rhs, "%d", &val) != 1) {
-                    global_end = clock();
-                    global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
-                    spreadsheet->time = global_cpu_time_used;
-                    printf("[%.2f] Error: Invalid literal in assignment.\n", spreadsheet->time);
-                    return;
-                }
-                targetCell->value = val;
-            }
-            targetCell->op = OP_NONE;
-            removeAdvancedFormula(spreadsheet, targetCell);
-            recalcUsingTopoOrder(targetCell, spreadsheet);
-            recalcAllAdvancedFormulas(spreadsheet);
-            printSpreadsheet(spreadsheet);
-            global_end = clock();
-            global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
-            spreadsheet->time = global_cpu_time_used;
-            printf("[%.2f] (ok)", spreadsheet->time);
-        }
-    }
-}
+         
+         /* Handle binary operations (e.g. A1=A2+5) */
+         if (strchr(rhs, '+') || strchr(rhs, '-') || strchr(rhs, '*') || strchr(rhs, '/')) {
+             char operand1Str[20], operand2Str[20];
+             char opChar;
+             if (sscanf(rhs, "%19[^+*/-]%c%19s", operand1Str, &opChar, operand2Str) != 3) {
+                 global_end = clock();
+                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+                 spreadsheet->time = global_cpu_time_used;
+                 printf("[%.2f] Error: Invalid binary operation format.\n", spreadsheet->time);
+                 return;
+             }
+             int operand1IsLiteral = 0, operand2IsLiteral = 0;
+             int literal1 = 0, literal2 = 0;
+             Cell *operand1 = NULL, *operand2 = NULL;
+             if (isalpha(operand1Str[0])) {
+                 int row1, col1;
+                 parseCellReference(operand1Str, &row1, &col1);
+                 if (row1 < 0 || row1 >= spreadsheet->rows || col1 < 0 || col1 >= spreadsheet->cols) {
+                     global_end = clock();
+                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+                     spreadsheet->time = global_cpu_time_used;
+                     printf("[%.2f] Error: Operand cell %s is out of bounds.\n", spreadsheet->time, operand1Str);
+                     return;
+                 }
+                 operand1 = &spreadsheet->table[row1][col1];
+             } else {
+                 if (sscanf(operand1Str, "%d", &literal1) != 1) {
+                     global_end = clock();
+                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+                     spreadsheet->time = global_cpu_time_used;
+                     printf("[%.2f] Error: Invalid literal operand '%s'.\n", spreadsheet->time, operand1Str);
+                     return;
+                 }
+                 operand1IsLiteral = 1;
+             }
+             if (isalpha(operand2Str[0])) {
+                 int row2, col2;
+                 parseCellReference(operand2Str, &row2, &col2);
+                 if (row2 < 0 || row2 >= spreadsheet->rows || col2 < 0 || col2 >= spreadsheet->cols) {
+                     global_end = clock();
+                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+                     spreadsheet->time = global_cpu_time_used;
+                     printf("[%.2f] Error: Operand cell %s is out of bounds.\n", spreadsheet->time, operand2Str);
+                     return;
+                 }
+                 operand2 = &spreadsheet->table[row2][col2];
+             } else {
+                 if (sscanf(operand2Str, "%d", &literal2) != 1) {
+                     global_end = clock();
+                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+                     spreadsheet->time = global_cpu_time_used;
+                     printf("[%.2f] Error: Invalid literal operand '%s'.\n", spreadsheet->time, operand2Str);
+                     return;
+                 }
+                 operand2IsLiteral = 1;
+             }
+             int result = 0;
+             switch (opChar) {
+                 case '+': result = (operand1IsLiteral ? literal1 : operand1->value) +
+                                  (operand2IsLiteral ? literal2 : operand2->value);
+                           targetCell->op = OP_ADD;
+                           break;
+                 case '-': result = (operand1IsLiteral ? literal1 : operand1->value) -
+                                  (operand2IsLiteral ? literal2 : operand2->value);
+                           targetCell->op = OP_SUB;
+                           break;
+                 case '*': result = (operand1IsLiteral ? literal1 : operand1->value) *
+                                  (operand2IsLiteral ? literal2 : operand2->value);
+                           targetCell->op = OP_MUL;
+                           break;
+                 case '/': if ((operand2IsLiteral ? literal2 : operand2->value) == 0) {
+                               global_end = clock();
+                               global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+                               spreadsheet->time = global_cpu_time_used;
+                               printf("[%.2f] Error: Division by zero.\n", spreadsheet->time);
+                               targetCell->error = 1;
+                               printSpreadsheet(spreadsheet);
+                               return;
+                           }
+                           result = (operand1IsLiteral ? literal1 : operand1->value) /
+                                    (operand2IsLiteral ? literal2 : operand2->value);
+                           targetCell->op = OP_DIV;
+                           break;
+                 default:
+                           global_end = clock();
+                           global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+                           spreadsheet->time = global_cpu_time_used;
+                           printf("[%.2f] Error: Unsupported operation '%c'.\n", spreadsheet->time, opChar);
+                           return;
+             }
+             targetCell->value = result;
+             targetCell->operand1IsLiteral = operand1IsLiteral;
+             targetCell->operand2IsLiteral = operand2IsLiteral;
+             if (!operand1IsLiteral) {
+                 targetCell->operand1 = operand1;
+                 addDependency(targetCell, operand1);
+                 addDependent(operand1, targetCell);
+             } else {
+                 targetCell->operand1Literal = literal1;
+             }
+             if (!operand2IsLiteral) {
+                 targetCell->operand2 = operand2;
+                 addDependency(targetCell, operand2);
+                 addDependent(operand2, targetCell);
+             } else {
+                 targetCell->operand2Literal = literal2;
+             }
+             removeAdvancedFormula(spreadsheet, targetCell);
+             recalcUsingTopoOrder(targetCell, spreadsheet);
+             recalcAllAdvancedFormulas(spreadsheet);
+             printSpreadsheet(spreadsheet);
+             global_end = clock();
+             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+             spreadsheet->time = global_cpu_time_used;
+             printf("[%.2f] (ok)\n", spreadsheet->time);
+         } else {
+             /* Assignment of a literal or a cell reference */
+             if (isalpha(rhs[0])) {
+                 int row, col;
+                 parseCellReference(rhs, &row, &col);
+                 if (row < 0 || row >= spreadsheet->rows || col < 0 || col >= spreadsheet->cols) {
+                     global_end = clock();
+                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+                     spreadsheet->time = global_cpu_time_used;
+                     printf("[%.2f] Error: Cell reference out of bounds (%s).\n", spreadsheet->time, rhs);
+                     return;
+                 }
+                 Cell *source = &spreadsheet->table[row][col];
+                 targetCell->value = source->value;
+                 targetCell->error = source->error;
+                 addDependency(targetCell, source);
+                 addDependent(source, targetCell);
+             } else {
+                 int val;
+                 if (sscanf(rhs, "%d", &val) != 1) {
+                     global_end = clock();
+                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+                     spreadsheet->time = global_cpu_time_used;
+                     printf("[%.2f] Error: Invalid literal in assignment.\n", spreadsheet->time);
+                     return;
+                 }
+                 targetCell->value = val;
+                 targetCell->error = 0;
+             }
+             targetCell->op = OP_NONE;
+             removeAdvancedFormula(spreadsheet, targetCell);
+             recalcUsingTopoOrder(targetCell, spreadsheet);
+             recalcAllAdvancedFormulas(spreadsheet);
+             printSpreadsheet(spreadsheet);
+             global_end = clock();
+             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+             spreadsheet->time = global_cpu_time_used;
+             printf("[%.2f] (ok)", spreadsheet->time);
+         }
+     }
+ }
 
-Spreadsheet *initializeSpreadsheet(int rows, int cols) {
-    Spreadsheet *spreadsheet = malloc(sizeof(Spreadsheet));
-    if (!spreadsheet) {
-        perror("Failed to allocate memory for Spreadsheet");
-        exit(EXIT_FAILURE);
-    }
-    spreadsheet->display = 0;
-    spreadsheet->rows = rows;
-    spreadsheet->cols = cols;
-    spreadsheet->time = 0.0;
-    spreadsheet->startRow = 0;
-    spreadsheet->startCol = 0;
-    spreadsheet->table = malloc(rows * sizeof(Cell *));
-    if (!spreadsheet->table) {
-        perror("Failed to allocate memory for spreadsheet table");
-        exit(EXIT_FAILURE);
-    }
-    for (int i = 0; i < rows; i++) {
-        spreadsheet->table[i] = malloc(cols * sizeof(Cell));
-        if (!spreadsheet->table[i]) {
-            perror("Failed to allocate memory for a row of cells");
-            exit(EXIT_FAILURE);
-        }
-        for (int j = 0; j < cols; j++) {
-            initCell(&spreadsheet->table[i][j], i, j);
-            spreadsheet->table[i][j].selfRow = i;
-            spreadsheet->table[i][j].selfCol = j;
-        }
-    }
-    spreadsheet->advancedFormulasCapacity = 10;
-    spreadsheet->advancedFormulasCount = 0;
-    spreadsheet->advancedFormulas = malloc(spreadsheet->advancedFormulasCapacity * sizeof(Cell *));
-    if (!spreadsheet->advancedFormulas) {
-        perror("Failed to allocate memory for advanced formulas list");
-        exit(EXIT_FAILURE);
-    }
-    return spreadsheet;
-}
-
-void getColumnLabel(int colIndex, char *label) {
-    int i = 0;
-    char temp[4];
-    while (colIndex >= 0) {
-        temp[i++] = 'A' + (colIndex % 26);
-        colIndex = (colIndex / 26) - 1;
-    }
-    temp[i] = '\0';
-    int len = strlen(temp);
-    for (int j = 0; j < len; j++) {
-        label[j] = temp[len - j - 1];
-    }
-    label[len] = '\0';
-}
-
-void printSpreadsheet(Spreadsheet *spreadsheet) {
-    if (spreadsheet->display == 1)
-        return;
-    int endRow = (spreadsheet->startRow + 10 < spreadsheet->rows) ? spreadsheet->startRow + 10 : spreadsheet->rows;
-    int endCol = (spreadsheet->startCol + 10 < spreadsheet->cols) ? spreadsheet->startCol + 10 : spreadsheet->cols;
-    printf("%4s", "");
-    for (int col = spreadsheet->startCol; col < endCol; col++) {
-        char label[4];
-        getColumnLabel(col, label);
-        printf("%12s", label);
-    }
-    printf("\n");
-    for (int row = spreadsheet->startRow; row < endRow; row++) {
-        printf("%4d", row + 1);
-        for (int col = spreadsheet->startCol; col < endCol; col++) {
-            printf("%12d", spreadsheet->table[row][col].value);
-        }
-        printf("\n");
-    }
-}
-
-void freeSpreadsheet(Spreadsheet *spreadsheet) {
-    for (int i = 0; i < spreadsheet->rows; i++) {
-        for (int j = 0; j < spreadsheet->cols; j++) {
-            freeCell(&spreadsheet->table[i][j]);
-        }
-        free(spreadsheet->table[i]);
-    }
-    free(spreadsheet->table);
-    free(spreadsheet->advancedFormulas);
-    free(spreadsheet);
-}
+ Spreadsheet *initializeSpreadsheet(int rows, int cols) {
+     Spreadsheet *spreadsheet = malloc(sizeof(Spreadsheet));
+     if (!spreadsheet) {
+         perror("Failed to allocate memory for Spreadsheet");
+         exit(EXIT_FAILURE);
+     }
+     spreadsheet->display = 0;
+     spreadsheet->rows = rows;
+     spreadsheet->cols = cols;
+     spreadsheet->time = 0.0;
+     spreadsheet->startRow = 0;
+     spreadsheet->startCol = 0;
+     spreadsheet->table = malloc(rows * sizeof(Cell *));
+     if (!spreadsheet->table) {
+         perror("Failed to allocate memory for spreadsheet table");
+         exit(EXIT_FAILURE);
+     }
+     for (int i = 0; i < rows; i++) {
+         spreadsheet->table[i] = malloc(cols * sizeof(Cell));
+         if (!spreadsheet->table[i]) {
+             perror("Failed to allocate memory for a row of cells");
+             exit(EXIT_FAILURE);
+         }
+         for (int j = 0; j < cols; j++) {
+             initCell(&spreadsheet->table[i][j], i, j);
+             spreadsheet->table[i][j].selfRow = i;
+             spreadsheet->table[i][j].selfCol = j;
+         }
+     }
+     spreadsheet->advancedFormulasCapacity = 10;
+     spreadsheet->advancedFormulasCount = 0;
+     spreadsheet->advancedFormulas = malloc(spreadsheet->advancedFormulasCapacity * sizeof(Cell *));
+     if (!spreadsheet->advancedFormulas) {
+         perror("Failed to allocate memory for advanced formulas list");
+         exit(EXIT_FAILURE);
+     }
+     return spreadsheet;
+ }
+ 
+ void getColumnLabel(int colIndex, char *label) {
+     int i = 0;
+     char temp[4];
+     while (colIndex >= 0) {
+         temp[i++] = 'A' + (colIndex % 26);
+         colIndex = (colIndex / 26) - 1;
+     }
+     temp[i] = '\0';
+     int len = strlen(temp);
+     for (int j = 0; j < len; j++) {
+         label[j] = temp[len - j - 1];
+     }
+     label[len] = '\0';
+ }
+ 
+ void printSpreadsheet(Spreadsheet *spreadsheet) {
+     if (spreadsheet->display == 1)
+         return;
+     int endRow = (spreadsheet->startRow + 10 < spreadsheet->rows) ? spreadsheet->startRow + 10 : spreadsheet->rows;
+     int endCol = (spreadsheet->startCol + 10 < spreadsheet->cols) ? spreadsheet->startCol + 10 : spreadsheet->cols;
+     printf("%4s", "");
+     for (int col = spreadsheet->startCol; col < endCol; col++) {
+         char label[4];
+         getColumnLabel(col, label);
+         printf("%12s", label);
+     }
+     printf("\n");
+     for (int row = spreadsheet->startRow; row < endRow; row++) {
+         printf("%4d", row + 1);
+         for (int col = spreadsheet->startCol; col < endCol; col++) {
+             Cell *cell = &spreadsheet->table[row][col];
+             if (cell->error) {
+                 printf("%12s", "ERR");
+             } else {
+                 printf("%12d", cell->value);
+             }
+         }
+         printf("\n");
+     }
+ }
+ 
+ void freeSpreadsheet(Spreadsheet *spreadsheet) {
+     for (int i = 0; i < spreadsheet->rows; i++) {
+         for (int j = 0; j < spreadsheet->cols; j++) {
+             freeCell(&spreadsheet->table[i][j]);
+         }
+         free(spreadsheet->table[i]);
+     }
+     free(spreadsheet->table);
+     free(spreadsheet->advancedFormulas);
+     free(spreadsheet);
+ } 

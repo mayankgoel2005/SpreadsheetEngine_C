@@ -27,7 +27,6 @@ typedef struct Cell {
     int value;
     int op;
     int row1, col1, row2, col2;
-    
     /* For simple formulas */
     int operand1IsLiteral;
     int operand1Literal;
@@ -41,6 +40,7 @@ typedef struct Cell {
     AVLNode *dependents;    // cells that depend on this cell.
     int selfRow;
     int selfCol;
+    int error;
 } Cell;
 
 void initCell(Cell *cell,int selfrow,int selfcol);
