@@ -52,12 +52,13 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         return 1;
     }
     if (strcmp(input, "enable_output") == 0) {
-        printSpreadsheet(spreadsheet);
+        
         end = clock();
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
         printf("[%.2f] Output enabled!\n",spreadsheet->time );
         spreadsheet->display=0;
+        printSpreadsheet(spreadsheet);
         return 1;
     }
 

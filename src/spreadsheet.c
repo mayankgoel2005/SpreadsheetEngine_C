@@ -516,6 +516,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = global_cpu_time_used;
         printf("[%.2f] (ok)\n", spreadsheet->time);
+        printSpreadsheet(spreadsheet);
         return;
     }
  
@@ -701,8 +702,27 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         }
         Cell *targetCell = &spreadsheet->table[targetRow][targetCol];
         clearDependencies(targetCell);
- 
-        if (strchr(rhs, '+') || strchr(rhs, '-') || strchr(rhs, '*') || strchr(rhs, '/')) {
+        int val;
+        if (rhs[0] == '-')
+        {
+            if (sscanf(rhs+1, "%d", &val) != 1) {
+                global_end = clock();
+                global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+                spreadsheet->time = global_cpu_time_used;
+                printf("[%.2f] Error: Invalid literal in assignment.\n", spreadsheet->time);
+                return;
+            }
+            targetCell->value = -val;
+            targetCell->op = OP_NONE;
+            recalcUsingTopoOrder(targetCell, spreadsheet);
+            recalcAllAdvancedFormulas(spreadsheet);
+            printSpreadsheet(spreadsheet);
+            global_end = clock();
+            global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+            spreadsheet->time = global_cpu_time_used;
+            printf("[%.2f] (ok)\n", spreadsheet->time);
+        }
+        else if (strchr(rhs, '+') || strchr(rhs, '-') || strchr(rhs, '*') || strchr(rhs, '/')) {
             /* Binary operation branch */
             char operand1Str[20], operand2Str[20];
             char opChar;
@@ -858,6 +878,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 addDependent(source, targetCell);
             } else {
                 int val;
+                
                 if (sscanf(rhs, "%d", &val) != 1) {
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
