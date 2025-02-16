@@ -874,7 +874,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
-            printf("[%.2f] (ok)", spreadsheet->time);
+            printf("[%.2f] (ok)\n", spreadsheet->time);
         }
     }
 }
