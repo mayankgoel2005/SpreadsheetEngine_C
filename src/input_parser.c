@@ -40,14 +40,14 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         end = clock();
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
-        printf("[%.2f] Exiting the spreadsheet. Goodbye!\n",spreadsheet->time );
+        printf("Exiting the spreadsheet. Goodbye!  %.2f\n",spreadsheet->time );
         return 0;
     }
     if (strcmp(input, "disable_output") == 0) {
         end = clock();
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
-        printf("[%.2f] Disabled output: Please Type \"enable_output\" to enable output!\n",spreadsheet->time );
+        printf("Disabled output: Please Type \"enable_output\" to enable output! %.2f \n",spreadsheet->time );
         spreadsheet->display=1;
         return 1;
     }
@@ -56,7 +56,7 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         end = clock();
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
-        printf("[%.2f] Output enabled!\n",spreadsheet->time );
+        printf("Output enabled!  %.2f \n",spreadsheet->time );
         spreadsheet->display=0;
         printSpreadsheet(spreadsheet);
         return 1;
@@ -65,35 +65,35 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
     // Scroll commands.
     if (strcmp(input, "w") == 0) {
         scrollUp(spreadsheet);
-        printSpreadsheet(spreadsheet);
         end = clock();
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
-        printf("[%.2f] Scrolled Up\n",spreadsheet->time );
+        printf("Scrolled Up  %.2f\n",spreadsheet->time );
+        printSpreadsheet(spreadsheet);
         return 1;
     } else if (strcmp(input, "s") == 0) {
         scrollDown(spreadsheet);
-        printSpreadsheet(spreadsheet);
         end = clock();
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
-        printf("[%.2f] Scrolled Up\n",spreadsheet->time );
+        printf("Scrolled Up  %.2f\n",spreadsheet->time );
+        printSpreadsheet(spreadsheet);
         return 1;
     } else if (strcmp(input, "a") == 0) {
         scrollLeft(spreadsheet);
-        printSpreadsheet(spreadsheet);
         end = clock();
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
-        printf("[%.2f] Scrolled Left\n",spreadsheet->time );
+        printf("Scrolled Left  %.2f\n",spreadsheet->time );
+        printSpreadsheet(spreadsheet);
         return 1;
     } else if (strcmp(input, "d") == 0) {
         scrollRight(spreadsheet);
-        printSpreadsheet(spreadsheet);
         end = clock();
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
-        printf("[%.2f] Scrolled Right\n",spreadsheet->time );
+        printf("Scrolled Right  %.2f\n",spreadsheet->time );
+        printSpreadsheet(spreadsheet);
         return 1;
     }
 
@@ -106,7 +106,7 @@ if (strncmp(input, "scroll_to", 9) == 0) {
         end = clock();
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
-        printf("[%.2f] Invalid format! Use: scroll_to <CellRef>\n", spreadsheet->time );
+        printf("Invalid format! Use: scroll_to <CellRef>  %.2f\n", spreadsheet->time );
         return 1;
     }
     cellRef = token;
@@ -116,7 +116,7 @@ if (strncmp(input, "scroll_to", 9) == 0) {
         end = clock();
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
-        printf("[%.2f] Too many arguments! Use: scroll_to <CellRef>\n", spreadsheet->time );
+        printf("Too many arguments! Use: scroll_to <CellRef>  %.2f\n", spreadsheet->time );
         return 1;
     }
 
@@ -126,7 +126,7 @@ if (strncmp(input, "scroll_to", 9) == 0) {
         end = clock();
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
-        printf("[%.2f] Invalid column format! Use: scroll_to <A1 - ZZZ999>\n", spreadsheet->time );
+        printf(" Invalid column format! Use: scroll_to <A1 - ZZZ999> %.2f\n", spreadsheet->time );
         return 1;
     }
 
@@ -139,7 +139,7 @@ if (strncmp(input, "scroll_to", 9) == 0) {
         end = clock();
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
-        printf("[%.2f] Invalid row format! Use: scroll_to <A1 - ZZZ999>\n", spreadsheet->time );
+        printf("Invalid row format! Use: scroll_to <A1 - ZZZ999> %.2f\n", spreadsheet->time );
         return 1;
     }
 
@@ -150,23 +150,24 @@ if (strncmp(input, "scroll_to", 9) == 0) {
         end = clock();
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
-        printf("[%.2f] Row should be in range (1, %d)\n",spreadsheet->time , spreadsheet->rows);
+        printf("Row should be in range (1, %d) %.2f \n" ,spreadsheet->rows , spreadsheet->time);
         return 1;
     }
     if (col > spreadsheet->cols || col <= 0) {
         end = clock();
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
-        printf("[%.2f] Column should be in range (A - %c)\n", spreadsheet->time , 'A' + spreadsheet->cols - 1);
+        printf(" Column should be in range (A - %c)\n %.2f" , 'A' + spreadsheet->cols - 1, spreadsheet->time);
         return 1;
     }
 
     scrollTo(spreadsheet, row, col);
-    printSpreadsheet(spreadsheet);
+
     end = clock();
     cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
     spreadsheet->time = cpu_time_used;
-    printf("[%.2f] Scrolled to %s", spreadsheet->time, cellRef);
+    printf("Scrolled to %s %.2f\n", cellRef, spreadsheet->time);
+    printSpreadsheet(spreadsheet);
     return 1;
 }  
 
