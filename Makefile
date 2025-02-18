@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -g -O0 -Wall -Wextra -pedantic -Iinclude
-TARGET = sheet
+TARGET = target/release/spreadsheet  # Correct binary name & path
 TEST_TARGET = test_sheet
 LDFLAGS = -lm
 
@@ -13,16 +13,19 @@ TEST_OBJ = $(TEST_SRC:.c=.o)
 all: $(TARGET)
 
 test: $(TEST_TARGET)
-	
 
+# Ensure target directory exists before compiling
 $(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) -o $@ $(OBJ) $(LDFLAGS)  
+	mkdir -p target/release   # Create required directories
+	$(CC) $(CFLAGS) -o $@ $(OBJ) $(LDFLAGS)
 
 $(TEST_TARGET): $(TEST_OBJ)
-	$(CC) $(CFLAGS) -o $@ $(TEST_OBJ) $(LDFLAGS)  
+	$(CC) $(CFLAGS) -o $@ $(TEST_OBJ) $(LDFLAGS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJ) $(TARGET) $(TEST_OBJ) $(TEST_TARGET)
+	rm -rf $(OBJ) $(TARGET) $(TEST_OBJ) $(TEST_TARGET) target/release/
+
+
