@@ -436,11 +436,6 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
         if (cell->dependents)
             avl_traverse(cell->dependents, process_dependent_callback, &pData);
     }
-    
-    if (processedCount != affectedCount) {
-        printf("Error: Cycle detected in dependencies. Recalculation aborted.\n");
-    }
-    
     free(affected);
     free(inDegree);
     free(zeroQueue);
