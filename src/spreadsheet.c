@@ -618,6 +618,24 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             sleep(seconds);
             result = seconds;
             opCode = OP_SLEEP;
+            targetCell->op = opCode;
+            targetCell->value = result;
+            targetCell->row1 = rStart;
+            targetCell->col1 = cStart;
+            targetCell->row2 = rEnd;
+            targetCell->col2 = cEnd;
+            
+    
+            recalc_cell(targetCell, spreadsheet);
+            recalcUsingTopoOrder(targetCell, spreadsheet);
+            recalcAllAdvancedFormulas(spreadsheet);
+            
+            
+            spreadsheet->time = result;
+            // printf("(ok) [%.2f]\n", spreadsheet->time);
+            printf("ok %.0f\n", spreadsheet->time);
+            printSpreadsheet(spreadsheet);
+            return;
         } else {
             char startRef[10], endRef[10];
             const char *colon = strchr(paramStr, ':');
@@ -739,7 +757,31 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         Cell *targetCell = &spreadsheet->table[targetRow][targetCol];
         clearDependencies(targetCell);
  
-        if (strchr(rhs, '+') || strchr(rhs, '-') || strchr(rhs, '*') || strchr(rhs, '/')) {
+        int val;
+        if (rhs[0] == '-')
+        {
+            if (sscanf(rhs+1, "%d", &val) != 1) {
+                global_end = clock();
+                global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+                spreadsheet->time = global_cpu_time_used;
+                // printf("Error: Invalid literal in assignment. [%.2f]\n", spreadsheet->time);
+                printf("Error %.0f \n", spreadsheet->time);
+                return;
+            }
+            targetCell->value = -val;
+            targetCell->op = OP_NONE;
+            recalcUsingTopoOrder(targetCell, spreadsheet);
+            recalcAllAdvancedFormulas(spreadsheet);
+            
+            global_end = clock();
+            global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+            spreadsheet->time = global_cpu_time_used;
+            // printf("(ok) [%.2f]\n", spreadsheet->time);
+            printf("ok %.0f\n", spreadsheet->time);
+            fflush(stdout);
+            printSpreadsheet(spreadsheet);
+        }
+        else if (strchr(rhs, '+') || strchr(rhs, '-') || strchr(rhs, '*') || strchr(rhs, '/')) {
             char operand1Str[20], operand2Str[20];
             char opChar;
             if (sscanf(rhs, "%19[^+*/-]%c%19s", operand1Str, &opChar, operand2Str) != 3) {
