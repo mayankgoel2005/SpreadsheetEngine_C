@@ -12,8 +12,18 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
-    int rows = atoi(argv[1]);
-    int cols = atoi(argv[2]);
+    
+    char *endptr; 
+    int rows = strtol(argv[1], &endptr, 10);
+    if (*endptr != '\0') {
+        printf("Invalid input: %s is not a valid integer.\n", argv[1]);
+        return 1;
+    }
+    int cols = strtol(argv[2], &endptr, 10);
+    if (*endptr != '\0') {
+        printf("Invalid input: %s is not a valid integer.\n", argv[1]);
+        return 1;
+    }
     if (rows >= 1000 || rows <= 0)
     {
         printf("Error: Rows should be in the range 1 to 1000 inclusive");
@@ -38,7 +48,7 @@ int main(int argc, char *argv[]) {
         
         printf("> ");
         if (!fgets(input, sizeof(input), stdin)) {
-            printf("( unrecognized cmd ) ");
+            printf("[0.0] (unrecognized cmd)");
             break;
         }
 

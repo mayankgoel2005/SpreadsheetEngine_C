@@ -41,7 +41,7 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
         // printf("Exiting the spreadsheet. Goodbye!  %.2f\n",spreadsheet->time );
-        printf("ok %.0f \n", spreadsheet->time);
+        printf("[%.1f] (ok) \n", spreadsheet->time);
         return 0;
     }
     if (strcmp(input, "disable_output") == 0) {
@@ -49,7 +49,7 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
         // printf("Disabled output: Please Type \"enable_output\" to enable output! %.2f \n",spreadsheet->time );
-        printf("ok %.0f \n", spreadsheet->time);
+        printf("[%.1f] (ok) \n", spreadsheet->time);
         spreadsheet->display=1;
         return 1;
     }
@@ -59,7 +59,7 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
         // printf("Output enabled!  %.2f \n",spreadsheet->time );
-        printf("ok %.0f \n", spreadsheet->time);
+        printf("[%.1f] (ok) \n", spreadsheet->time);
         spreadsheet->display=0;
         printSpreadsheet(spreadsheet);
         return 1;
@@ -104,86 +104,86 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         return 1;
     }
 
-if (strncmp(input, "scroll_to", 9) == 0) {
-    char *token = strtok(input, " ");
-    char *cellRef;
+    if (strncmp(input, "scroll_to ", 10) == 0) {
+        char *token = strtok(input, " ");
+        char *cellRef;
 
-    token = strtok(NULL, " ");
-    if (token == NULL) {
+        token = strtok(NULL, " ");
+        if (token == NULL) {
+            end = clock();
+            cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+            spreadsheet->time = cpu_time_used;
+            // printf("Invalid format! Use: scroll_to <CellRef>  %.2f\n", spreadsheet->time );
+            printf("[%.1f] Error \n", spreadsheet->time);
+            return 1;
+        }
+        cellRef = token;
+
+        token = strtok(NULL, " ");
+        if (token != NULL) {
+            end = clock();
+            cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+            spreadsheet->time = cpu_time_used;
+            // printf("Too many arguments! Use: scroll_to <CellRef>  %.2f\n", spreadsheet->time );
+            printf("[%.1f] Error \n", spreadsheet->time);
+            return 1;
+        }
+
+        int i = 0;
+        while (isalpha(cellRef[i])) i++;
+        if (i == 0 || i > 3) {
+            end = clock();
+            cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+            spreadsheet->time = cpu_time_used;
+            //printf(" Invalid column format! Use: scroll_to <A1 - ZZZ999> %.2f\n", spreadsheet->time );
+            printf("[%.1f] Error \n", spreadsheet->time);
+            return 1;
+        }
+
+        char colPart[4];
+        strncpy(colPart, cellRef, i);
+        colPart[i] = '\0';
+
+        char *rowPart = &cellRef[i];
+        if (!isNumber(rowPart)) {
+            end = clock();
+            cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+            spreadsheet->time = cpu_time_used;
+            // printf("Invalid row format! Use: scroll_to <A1 - ZZZ999> %.2f\n", spreadsheet->time );
+            printf("[%.1f] Error \n", spreadsheet->time);
+            return 1;
+        }
+
+        int col = columnToIndex(colPart);
+        int row = atoi(rowPart);
+
+        if (row > spreadsheet->rows || row <= 0) {
+            end = clock();
+            cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+            spreadsheet->time = cpu_time_used;
+            // printf("Row should be in range (1, %d) %.2f \n" ,spreadsheet->rows , spreadsheet->time);
+            printf("[%.1f] Error \n", spreadsheet->time);
+            return 1;
+        }
+        if (col > spreadsheet->cols || col <= 0) {
+            end = clock();
+            cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+            spreadsheet->time = cpu_time_used;
+            // printf(" Column should be in range (A - %c)\n %.2f" , 'A' + spreadsheet->cols - 1, spreadsheet->time);
+            printf("[%.1f] Error \n", spreadsheet->time);
+            return 1;
+        }
+        
+        scrollTo(spreadsheet, row, col);
+
         end = clock();
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
-        // printf("Invalid format! Use: scroll_to <CellRef>  %.2f\n", spreadsheet->time );
-        printf("Error %.0f \n", spreadsheet->time);
+        // printf("Scrolled to %s %.2f\n", cellRef, spreadsheet->time);
+        printf("[%.1f] (ok) \n", spreadsheet->time);
+        printSpreadsheet(spreadsheet);
         return 1;
-    }
-    cellRef = token;
-
-    token = strtok(NULL, " ");
-    if (token != NULL) {
-        end = clock();
-        cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-        spreadsheet->time = cpu_time_used;
-        // printf("Too many arguments! Use: scroll_to <CellRef>  %.2f\n", spreadsheet->time );
-        printf("Error %.0f \n", spreadsheet->time);
-        return 1;
-    }
-
-    int i = 0;
-    while (isalpha(cellRef[i])) i++;
-    if (i == 0 || i > 3) {
-        end = clock();
-        cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-        spreadsheet->time = cpu_time_used;
-        //printf(" Invalid column format! Use: scroll_to <A1 - ZZZ999> %.2f\n", spreadsheet->time );
-        printf("Error %.0f \n", spreadsheet->time);
-        return 1;
-    }
-
-    char colPart[4];
-    strncpy(colPart, cellRef, i);
-    colPart[i] = '\0';
-
-    char *rowPart = &cellRef[i];
-    if (!isNumber(rowPart)) {
-        end = clock();
-        cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-        spreadsheet->time = cpu_time_used;
-        // printf("Invalid row format! Use: scroll_to <A1 - ZZZ999> %.2f\n", spreadsheet->time );
-        printf("Error %.0f \n", spreadsheet->time);
-        return 1;
-    }
-
-    int col = columnToIndex(colPart);
-    int row = atoi(rowPart);
-
-    if (row > spreadsheet->rows || row <= 0) {
-        end = clock();
-        cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-        spreadsheet->time = cpu_time_used;
-        // printf("Row should be in range (1, %d) %.2f \n" ,spreadsheet->rows , spreadsheet->time);
-        printf("Error %.0f \n", spreadsheet->time);
-        return 1;
-    }
-    if (col > spreadsheet->cols || col <= 0) {
-        end = clock();
-        cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-        spreadsheet->time = cpu_time_used;
-        // printf(" Column should be in range (A - %c)\n %.2f" , 'A' + spreadsheet->cols - 1, spreadsheet->time);
-        printf("Error %.0f \n", spreadsheet->time);
-        return 1;
-    }
-    
-    scrollTo(spreadsheet, row, col);
-
-    end = clock();
-    cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-    spreadsheet->time = cpu_time_used;
-    // printf("Scrolled to %s %.2f\n", cellRef, spreadsheet->time);
-    printf("ok %.0f \n", spreadsheet->time);
-    printSpreadsheet(spreadsheet);
-    return 1;
-}  
+    }  
 
     handleOperation(input, spreadsheet, start);
 

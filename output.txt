@@ -1,104 +1,107 @@
-[0.00] (ok)
-[0.00] (ok)
-[0.00] (ok)
+[0.01] (ok)
 [0.00] (ok)
 ok 0
-ok 0
-ok 0
+[0.00] (ok)
 [0.00] (ok)
 ok 0
 [0.03] (ok)
 [0.00] (ok)
+[0.00] (ok)
+[0.01] Error: Division by zero.
+[0.06] (ok)
+Sleeping for 1 seconds...
+ok 1
 ok 0
-ok 0
+[0.02] (ok)
+[0.02] (ok)
+[0.01] Error: Division by zero.
+[0.01] Error: Division by zero.
+[0.38] (ok)
+[0.06] (ok)
+[0.19] (ok)
+[0.09] (ok)
+[0.08] (ok)
+[0.08] (ok)
+[0.08] (ok)
+[0.03] Error: Advanced formula would create a cyclic dependency. Formula rejected.
+[0.09] (ok)
+[0.12] (ok)
+[0.09] (ok)
+[0.11] (ok)
 [0.10] (ok)
+[0.09] (ok)
+Sleeping for 2 seconds...
+ok 2
+[0.11] (ok)
 ok 0
 ok 0
+[0.12] (ok)
+[0.10] (ok)
+[0.10] (ok)
 Sleeping for 2 seconds...
 ok 2
 [0.01] Error: Division by zero.
-[0.02] (ok)
-ok 0
+[0.10] (ok)
 [0.09] (ok)
-[0.08] (ok)
+[0.09] (ok)
+[0.10] (ok)
+[0.10] (ok)
+[0.10] (ok)
+[0.10] (ok)
+[0.10] (ok)
 [0.14] (ok)
 [0.01] Error: Division by zero.
-[0.04] (ok)
-[0.11] (ok)
-[0.05] (ok)
-[0.05] (ok)
-[0.06] (ok)
-[0.05] (ok)
-[0.05] (ok)
-[0.10] Error: Advanced formula would create a cyclic dependency. Formula rejected.
-[0.06] (ok)
-ok 0
-ok 0
-ok 0
-[0.05] (ok)
-[0.06] (ok)
-ok 0
-[0.00] Error: Advanced formula creates a direct self-reference. Formula rejected.
-[0.05] (ok)
-[0.06] (ok)
-[0.14] (ok)
-[0.06] (ok)
-[0.07] (ok)
-[0.07] (ok)
-[0.00] Error: Advanced formula creates a direct self-reference. Formula rejected.
-ok 0
 [0.10] (ok)
-[0.07] (ok)
-[0.07] (ok)
+ok 0
+[0.12] (ok)
+[0.11] (ok)
+[0.11] (ok)
 [0.16] (ok)
-[0.09] (ok)
-[0.13] (ok)
-[0.10] (ok)
-ok 0
-[0.11] (ok)
-[0.32] (ok)
 [0.01] Error: Division by zero.
-[0.12] (ok)
 ok 0
 ok 0
-[0.11] (ok)
-[0.12] (ok)
 ok 0
 [0.11] (ok)
 [0.11] (ok)
-[0.12] (ok)
-[0.11] (ok)
-[0.11] (ok)
-[0.11] (ok)
-[0.11] (ok)
-ok 0
-[0.11] (ok)
-[0.12] (ok)
-[0.12] (ok)
-[0.14] (ok)
-[0.12] (ok)
 [0.13] (ok)
-[0.40] (ok)
-[0.14] (ok)
-[0.13] (ok)
-ok 0
-ok 0
-[0.14] (ok)
-[0.14] (ok)
-ok 0
-[0.06] Error: Advanced formula would create a cyclic dependency. Formula rejected.
-[0.13] (ok)
-[0.01] Error: Division by zero.
-[0.13] (ok)
+[0.11] (ok)
+[0.12] (ok)
 [0.04] Error: Advanced formula would create a cyclic dependency. Formula rejected.
-[0.14] (ok)
+[0.13] (ok)
+[0.12] (ok)
+ok 0
+ok 0
+[0.12] (ok)
+[0.12] (ok)
+ok 0
+[0.12] (ok)
+[0.12] (ok)
+[0.19] (ok)
+[0.00] Error: Advanced formula creates a direct self-reference. Formula rejected.
+ok 0
+ok 0
+[0.12] (ok)
+[0.01] Error: Division by zero.
+[0.12] (ok)
+ok 0
+[0.13] (ok)
+[0.13] (ok)
+[0.12] (ok)
+[0.20] (ok)
+[0.19] (ok)
+[0.00] Error: Advanced formula creates a direct self-reference. Formula rejected.
+Sleeping for 2 seconds...
+ok 2
+[0.16] (ok)
+[0.01] Error: Division by zero.
+ok 0
+[0.13] (ok)
 [0.13] (ok)
 ok 0
 ok 0
-[0.14] (ok)
-[0.41] (ok)
-[0.14] (ok)
-[0.14] (ok)
+[0.05] Error: Advanced formula would create a cyclic dependency. Formula rejected.
+ok 0
+ok 0
 
                A           B           C           D           E           F           G           H           I           J
    1           0           0           0           0           0           0           0           0           0           0
