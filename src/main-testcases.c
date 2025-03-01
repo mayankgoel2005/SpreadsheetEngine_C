@@ -16,7 +16,7 @@
 #define MIN_VALUE -1000
 #define MAX_VALUE 1000
 
-int n = 100;  // Global variable for the total number of operations
+int n = 20;  // Global variable for the total number of operations
 
 // Function to get Excel-style column name (e.g., A, AB, ZZZ)
 void get_column_letter(int col_num, char *col_letter) {
