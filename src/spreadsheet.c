@@ -266,7 +266,8 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
                         result = 0;
                         break;
                     }                
-                    double sum = 0.0, mean, sqDiffSum = 0.0;
+                    int sum = 0, mean;
+                    double sqDiffSum = 0.0;
                     for (int r = rStart; r <= rEnd; r++) {
                         for (int c = cStart; c <= cEnd; c++) {
                             sum += spreadsheet->table[r][c].value;
