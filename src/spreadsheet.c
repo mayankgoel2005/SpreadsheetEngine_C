@@ -287,6 +287,14 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
             if ((!cell->operand1IsLiteral && cell->operand1 && cell->operand1->error) ||
                 (!cell->operand2IsLiteral && cell->operand2 && cell->operand2->error)) {
                 cell->error = 1;
+                cell->value = 0; // default value when error occurs
+                cell->op = OP_ADD; // or keep the operation code if desired
+                if (!cell->operand1IsLiteral) {
+                    cell->operand1 = cell->operand1;
+                }
+                if (!cell->operand2IsLiteral) {
+                    cell->operand2 = cell->operand2;
+                }
                 return;
             }
             int op1 = cell->operand1IsLiteral ? cell->operand1Literal : (cell->operand1 ? cell->operand1->value : 0);
@@ -854,6 +862,11 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 targetCell->error = 1;
                 targetCell->value = 0; // default value when dependency is in error
                 targetCell->op = OP_ADD; // or keep the operation code if desired
+
+                // Set the literal flags so recalculation uses the correct operands
+                targetCell->operand1IsLiteral = operand1IsLiteral;
+                targetCell->operand2IsLiteral = operand2IsLiteral;
+                
                 if (!operand1IsLiteral) {
                     targetCell->operand1 = operand1;
                     addDependency(targetCell, operand1);
