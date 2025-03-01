@@ -5,3 +5,5 @@ output.xlsx
 expected.xlsx
 .vscode
 .idea
+.DS_Store
+target/.DS_Store
