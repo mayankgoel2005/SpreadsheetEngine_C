@@ -1,6 +1,6 @@
 CC = gcc
-CFLAGS = -g -O0 -Wall -Wextra -pedantic -Iinclude -I/opt/homebrew/opt/libxlsxwriter/include
-TARGET = sheet
+CFLAGS = -g -O2 -Wall -Wextra -pedantic -Iinclude -I/opt/homebrew/opt/libxlsxwriter/include
+TARGET = ./target/release/spreadsheet
 TEST_TARGET = test_sheet
 LDFLAGS = -L/opt/homebrew/opt/libxlsxwriter/lib -lxlsxwriter -lm
 
@@ -26,3 +26,4 @@ $(TEST_TARGET): $(TEST_OBJ)
 
 clean:
 	rm -f $(OBJ) $(TARGET) $(TEST_OBJ) $(TEST_TARGET)
+

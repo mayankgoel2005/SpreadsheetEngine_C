@@ -1,5 +1,6 @@
 *.o
 sheet
 sheet.exe
-
-
+output.xlsx
+expected.xlsx
+.vscode
