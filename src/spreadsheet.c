@@ -736,11 +736,12 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
     } else {
         /* Simple assignment or reference branch */
         char targetRef[10], rhs[100];
-        if (sscanf(input, "%9[^=]=%99s", targetRef, rhs) != 2) {
+        char extra[10]; // Buffer to capture unexpected trailing characters
+        if (sscanf(input, "%9[^=]=%99s%9s", targetRef, rhs, extra) == 3) {
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
-            printf("[%.2f] Error: Invalid input format.\n", spreadsheet->time);
+            printf("[%.2f] Error: Invalid input format, unexpected characters after assignment.\n", spreadsheet->time);
             return;
         }
         int targetRow, targetCol;
@@ -755,11 +756,11 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         int val;
         if (rhs[0] == '-')
         {
-            if (sscanf(rhs+1, "%d", &val) != 1) {
+            char extra[10]; // Buffer to capture unexpected characters
+            if (sscanf(rhs + 1, "%d%9s", &val, extra) != 1) {
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
-                // printf("Error: Invalid literal in assignment. [%.2f]\n", spreadsheet->time);
                 printf("Error %.0f \n", spreadsheet->time);
                 return;
             }
@@ -934,7 +935,8 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 addDependent(source, targetCell);
             } else {
                 int val;
-                if (sscanf(rhs, "%d", &val) != 1) {
+                char extra[10]; // Buffer to capture unexpected characters
+                if (sscanf(rhs, "%d%9s", &val, extra) != 1) {
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;

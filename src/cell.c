@@ -39,6 +39,13 @@ void parseCellReference(const char *ref, int *row, int *col) {
         *col = *col * 26 + (toupper(ref[i]) - 'A' + 1);
         i++;
     }
+    if (!isdigit(ref[i])) {
+        *row=20000;
+    }
+    char *endptr;
+    *row = strtol(ref + i, &endptr, 10) - 1;  
     *col = *col - 1;  // Convert from 1-based to 0-based.
-    *row = atoi(ref + i) - 1;  
+    if (*endptr != '\0') {
+        *row=20000;
+    }
 }
