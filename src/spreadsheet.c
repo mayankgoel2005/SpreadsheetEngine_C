@@ -302,14 +302,14 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
                     break;
                 case OP_DIV:
                     if (op2 == 0) {
-                        printf("Error: Division by zero in simple formula recalculation.\n");
                         cell->error = 1;
-                        return;
+                        cell->value = 0;  // Optional: assign a default value if desired.
                     } else {
                         cell->value = op1 / op2;
                         cell->error = 0;
                     }
                     break;
+                
                 default:
                     break;
             }
@@ -861,17 +861,18 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                                  (operand2IsLiteral ? literal2 : operand2->value);
                           targetCell->op = OP_MUL;
                           break;
-                case '/': if ((operand2IsLiteral ? literal2 : operand2->value) == 0) {
-                              global_end = clock();
-                              global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
-                              spreadsheet->time = global_cpu_time_used;
-                              printf("[%.2f] Error: Division by zero.\n", spreadsheet->time);
-                              return;
+                case '/': 
+                          if ((operand2IsLiteral ? literal2 : operand2->value) == 0) {
+                              targetCell->error = 1;
+                              result = 0;  // Optional: assign a default value if desired.
+                          } else {
+                              result = (operand1IsLiteral ? literal1 : operand1->value) /
+                                       (operand2IsLiteral ? literal2 : operand2->value);
+                              targetCell->error = 0;
                           }
-                          result = (operand1IsLiteral ? literal1 : operand1->value) /
-                                   (operand2IsLiteral ? literal2 : operand2->value);
                           targetCell->op = OP_DIV;
                           break;
+                      
                 default:
                           global_end = clock();
                           global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
