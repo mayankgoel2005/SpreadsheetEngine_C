@@ -228,6 +228,9 @@ void addDependent(Cell *sourceCell, Cell *target) {
     sourceCell->dependents = avl_insert(sourceCell->dependents, target, avl_cell_compare);
 }
 
+/* recalc_cell now propagates errors.
+   For simple formulas, if any operand is in error, the cell is marked as error.
+   For division, if op2 is zero, the cell is marked as error (and its value is set to 0). */
 void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
     if (cell->op != OP_NONE) {
         if (cell->op >= OP_ADV_SUM && cell->op <= OP_ADV_STDEV) {
@@ -277,9 +280,10 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
             cell->error = 0;
         }
         else if (cell->op == OP_SLEEP) {
-            /* Do nothing */
+            /* Do nothing for sleep */
         }
         else {
+            /* For simple formulas, if an operand is in error, mark the cell as error */
             if ((!cell->operand1IsLiteral && cell->operand1 && cell->operand1->error) ||
                 (!cell->operand2IsLiteral && cell->operand2 && cell->operand2->error)) {
                 cell->error = 1;
@@ -287,35 +291,34 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
             }
             int op1 = cell->operand1IsLiteral ? cell->operand1Literal : (cell->operand1 ? cell->operand1->value : 0);
             int op2 = cell->operand2IsLiteral ? cell->operand2Literal : (cell->operand2 ? cell->operand2->value : 0);
+            int result = 0;
             switch (cell->op) {
                 case OP_ADD:
-                    cell->value = op1 + op2;
-                    cell->error = 0;
+                    result = op1 + op2;
                     break;
                 case OP_SUB:
-                    cell->value = op1 - op2;
-                    cell->error = 0;
+                    result = op1 - op2;
                     break;
                 case OP_MUL:
-                    cell->value = op1 * op2;
-                    cell->error = 0;
+                    result = op1 * op2;
                     break;
                 case OP_DIV:
                     if (op2 == 0) {
                         cell->error = 1;
-                        cell->value = 0;  // Optional: assign a default value if desired.
-                    } else {
-                        cell->value = op1 / op2;
-                        cell->error = 0;
+                        cell->value = 0; // default value when error occurs
+                        return;
                     }
+                    result = op1 / op2;
                     break;
-                
                 default:
                     break;
             }
+            cell->value = result;
+            cell->error = 0;
         }
     }
     else {
+        /* Direct assignment or reference branch */
         if (!cell->operand1IsLiteral && cell->operand1 != NULL) {
             cell->value = cell->operand1->value;
             cell->error = cell->operand1->error;
@@ -427,10 +430,12 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     pData.zeroQueueSize = &zeroQueueSize;
     
     int zeroQueueFront = 0;
+    int processedCount = 0;
     while (zeroQueueFront < zeroQueueSize) {
         int idx = zeroQueue[zeroQueueFront++];
         Cell *cell = affected[idx];
         recalc_cell(cell, spreadsheet);
+        processedCount++;
         if (cell->dependents)
             avl_traverse(cell->dependents, process_dependent_callback, &pData);
     }
@@ -618,14 +623,11 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             targetCell->row2 = rEnd;
             targetCell->col2 = cEnd;
             
-    
             recalc_cell(targetCell, spreadsheet);
             recalcUsingTopoOrder(targetCell, spreadsheet);
             recalcAllAdvancedFormulas(spreadsheet);
             
-            
             spreadsheet->time = result;
-            // printf("(ok) [%.2f]\n", spreadsheet->time);
             printf("ok %.0f\n", spreadsheet->time);
             printSpreadsheet(spreadsheet);
             return;
@@ -660,7 +662,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 printf("[%.2f] Error: Advanced formula creates a direct self-reference. Formula rejected.\n", spreadsheet->time);
                 return;
             }
-            /* Run DFS-based cycle check on the advanced formula's range */
             if (checkAdvancedFormulaCycle(targetCell, rStart, cStart, rEnd, cEnd, spreadsheet)) {
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
@@ -734,12 +735,11 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
     } else {
         /* Simple assignment or reference branch */
         char targetRef[10], rhs[100];
-        char extra[10]; // Buffer to capture unexpected trailing characters
-        if (sscanf(input, "%9[^=]=%99s%9s", targetRef, rhs, extra) == 3) {
+        if (sscanf(input, "%9[^=]=%99s", targetRef, rhs) != 2) {
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
-            printf("[%.2f] Error: Invalid input format, unexpected characters after assignment.\n", spreadsheet->time);
+            printf("[%.2f] Error: Invalid input format.\n", spreadsheet->time);
             return;
         }
         int targetRow, targetCol;
@@ -752,10 +752,9 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         clearDependencies(targetCell);
  
         int val;
-        if (rhs[0] == '-')
-        {
-            char extra[10]; // Buffer to capture unexpected characters
-            if (sscanf(rhs + 1, "%d%9s", &val, extra) != 1) {
+        /* Check for unary minus literal */
+        if (rhs[0] == '-') {
+            if (sscanf(rhs+1, "%d", &val) != 1) {
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
@@ -770,7 +769,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
-            // printf("(ok) [%.2f]\n", spreadsheet->time);
             printf("ok %.0f\n", spreadsheet->time);
             fflush(stdout);
             printSpreadsheet(spreadsheet);
@@ -799,7 +797,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     return;
                 }
                 operand1 = &spreadsheet->table[row1][col1];
-                /* Use DFS-based check for cycles on full dependency chain */
                 if (checkCycle(operand1, targetCell, spreadsheet)) {
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
@@ -847,6 +844,39 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 }
                 operand2IsLiteral = 1;
             }
+            
+            /* --- NEW ERROR-PROPAGATION CHECK --- */
+            if ((!operand1IsLiteral && operand1->error) ||
+                (!operand2IsLiteral && operand2->error)) {
+                targetCell->error = 1;
+                targetCell->value = 0; // default value when dependency is in error
+                targetCell->op = OP_ADD; // or keep the operation code if desired
+                if (!operand1IsLiteral) {
+                    targetCell->operand1 = operand1;
+                    addDependency(targetCell, operand1);
+                    addDependent(operand1, targetCell);
+                } else {
+                    targetCell->operand1Literal = literal1;
+                }
+                if (!operand2IsLiteral) {
+                    targetCell->operand2 = operand2;
+                    addDependency(targetCell, operand2);
+                    addDependent(operand2, targetCell);
+                } else {
+                    targetCell->operand2Literal = literal2;
+                }
+                removeAdvancedFormula(spreadsheet, targetCell);
+                recalcUsingTopoOrder(targetCell, spreadsheet);
+                recalcAllAdvancedFormulas(spreadsheet);
+                printSpreadsheet(spreadsheet);
+                global_end = clock();
+                global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+                spreadsheet->time = global_cpu_time_used;
+                printf("[%.2f] (ok)\n", spreadsheet->time);
+                return;
+            }
+            /* --- END NEW CHECK --- */
+            
             int result = 0;
             switch (opChar) {
                 case '+': result = (operand1IsLiteral ? literal1 : operand1->value) +
@@ -864,7 +894,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 case '/': 
                           if ((operand2IsLiteral ? literal2 : operand2->value) == 0) {
                               targetCell->error = 1;
-                              result = 0;  // Optional: assign a default value if desired.
+                              result = 0; // default value for error
                           } else {
                               result = (operand1IsLiteral ? literal1 : operand1->value) /
                                        (operand2IsLiteral ? literal2 : operand2->value);
@@ -872,7 +902,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                           }
                           targetCell->op = OP_DIV;
                           break;
-                      
                 default:
                           global_end = clock();
                           global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
@@ -919,7 +948,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     return;
                 }
                 Cell *source = &spreadsheet->table[row][col];
-                /* Use DFS-based check to see if source (which might be advanced) leads to target */
                 if (checkCycle(source, targetCell, spreadsheet)) {
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
@@ -934,8 +962,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 addDependent(source, targetCell);
             } else {
                 int val;
-                char extra[10]; // Buffer to capture unexpected characters
-                if (sscanf(rhs, "%d%9s", &val, extra) != 1) {
+                if (sscanf(rhs, "%d", &val) != 1) {
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
