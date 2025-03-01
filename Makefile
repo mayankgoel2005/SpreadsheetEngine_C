@@ -17,9 +17,11 @@ test: $(TEST_TARGET)
 
 $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $(OBJ) $(LDFLAGS)
+	cp $(TARGET) ./sheet
 
 $(TEST_TARGET): $(TEST_OBJ)
 	$(CC) $(CFLAGS) -o $@ $(TEST_OBJ) $(LDFLAGS)
+	cp $(TEST_TARGET) ./sheet_test
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
