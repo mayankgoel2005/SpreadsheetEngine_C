@@ -630,7 +630,14 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 }
                 seconds = source->value;
             } else {
-                seconds = atoi(paramStr);
+               char extra[10];
+                if (sscanf(paramStr, "%d%9s", &seconds, extra) != 1) {
+                    global_end = clock();
+                    global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+                    spreadsheet->time = global_cpu_time_used;
+                    printf("[%.1f] Error: Invalid literal operand '%s' for SLEEP. ", spreadsheet->time, paramStr);
+                    return;
+                }
             }
             // printf("Sleeping for %d seconds... ", seconds);
             sleep(seconds);
@@ -642,15 +649,15 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             targetCell->col1 = cStart;
             targetCell->row2 = rEnd;
             targetCell->col2 = cEnd;
-            
+
             recalc_cell(targetCell, spreadsheet);
             recalcUsingTopoOrder(targetCell, spreadsheet);
             recalcAllAdvancedFormulas(spreadsheet);
-            
+
             spreadsheet->time = result;
             printSpreadsheet(spreadsheet);
             printf("[%.1f] (ok) ", spreadsheet->time);
-            
+
             return;
         } else {
             char startRef[10], endRef[10];
@@ -733,7 +740,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 return;
             }
         }
- 
+
         targetCell->op = opCode;
         targetCell->value = result;
         targetCell->row1 = rStart;
@@ -743,7 +750,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         if (opCode != OP_SLEEP) {
             addAdvancedFormula(spreadsheet, targetCell);
         }
- 
+
         recalc_cell(targetCell, spreadsheet);
         recalcUsingTopoOrder(targetCell, spreadsheet);
         recalcAllAdvancedFormulas(spreadsheet);
@@ -756,7 +763,8 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
     } else {
         /* Simple assignment or reference branch */
         char targetRef[10], rhs[100];
-        if (sscanf(input, "%9[^=]=%99s", targetRef, rhs) != 2) {
+        char extra[10];
+        if (sscanf(input, "%9[^=]=%99s%9s", targetRef, rhs, extra) == 3) {
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
@@ -774,11 +782,12 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         }
         Cell *targetCell = &spreadsheet->table[targetRow][targetCol];
         clearDependencies(targetCell);
- 
+
         int val;
         /* Check for unary minus literal */
         if (rhs[0] == '-') {
-            if (sscanf(rhs+1, "%d", &val) != 1) {
+            char extra[10];
+            if (sscanf(rhs + 1, "%d%9s", &val, extra) != 1) {
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
@@ -789,11 +798,11 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             targetCell->op = OP_NONE;
             recalcUsingTopoOrder(targetCell, spreadsheet);
             recalcAllAdvancedFormulas(spreadsheet);
-            
+
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
-            
+
             fflush(stdout);
             printSpreadsheet(spreadsheet);
             printf("[%.1f] (ok) ", spreadsheet->time);
@@ -830,7 +839,8 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     return;
                 }
             } else {
-                if (sscanf(operand1Str, "%d", &literal1) != 1) {
+                char extra1[10];
+                if (sscanf(operand1Str, "%d%9s", &literal1, extra1) != 1) {
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
@@ -858,7 +868,8 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     return;
                 }
             } else {
-                if (sscanf(operand2Str, "%d", &literal2) != 1) {
+                char extra2[10];
+                if (sscanf(operand1Str, "%d%9s", &literal1, extra2) != 1) {
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
@@ -867,7 +878,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 }
                 operand2IsLiteral = 1;
             }
-            
+
             /* --- NEW ERROR-PROPAGATION CHECK --- */
             if ((!operand1IsLiteral && operand1->error) ||
                 (!operand2IsLiteral && operand2->error)) {
@@ -878,7 +889,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 // Set the literal flags so recalculation uses the correct operands
                 targetCell->operand1IsLiteral = operand1IsLiteral;
                 targetCell->operand2IsLiteral = operand2IsLiteral;
-                
+
                 if (!operand1IsLiteral) {
                     targetCell->operand1 = operand1;
                     addDependency(targetCell, operand1);
@@ -904,7 +915,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 return;
             }
             /* --- END NEW CHECK --- */
-            
+
             int result = 0;
             switch (opChar) {
                 case '+': result = (operand1IsLiteral ? literal1 : operand1->value) +
@@ -919,7 +930,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                                  (operand2IsLiteral ? literal2 : operand2->value);
                           targetCell->op = OP_MUL;
                           break;
-                case '/': 
+                case '/':
                           if ((operand2IsLiteral ? literal2 : operand2->value) == 0) {
                               targetCell->error = 1;
                               result = 0; // default value for error
@@ -990,7 +1001,8 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 addDependent(source, targetCell);
             } else {
                 int val;
-                if (sscanf(rhs, "%d", &val) != 1) {
+                char extra[10];
+                if (sscanf(rhs, "%d%9s", &val, extra) != 1) {
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
@@ -1051,7 +1063,7 @@ Spreadsheet *initializeSpreadsheet(int rows, int cols) {
     }
     return spreadsheet;
 }
- 
+
 void getColumnLabel(int colIndex, char *label) {
     int i = 0;
     char temp[4];
@@ -1066,7 +1078,7 @@ void getColumnLabel(int colIndex, char *label) {
     }
     label[len] = '\0';
 }
- 
+
 void printSpreadsheet(Spreadsheet *spreadsheet) {
     if (spreadsheet->display == 1)
         return;
@@ -1092,7 +1104,7 @@ void printSpreadsheet(Spreadsheet *spreadsheet) {
         printf("\n");
     }
 }
- 
+
 void freeSpreadsheet(Spreadsheet *spreadsheet) {
     for (int i = 0; i < spreadsheet->rows; i++) {
         for (int j = 0; j < spreadsheet->cols; j++) {
