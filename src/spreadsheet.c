@@ -272,8 +272,8 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
                         for (int c = cStart; c <= cEnd; c++) {
                             sum += spreadsheet->table[r][c].value;
                         }
-                    }                    
-                    mean = sum / count; 
+                    }
+                    mean = sum / count;
                     for (int r = rStart; r <= rEnd; r++) {
                         for (int c = cStart; c <= cEnd; c++) {
                             double diff = spreadsheet->table[r][c].value - mean;
@@ -281,11 +281,11 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
                         }
                     }
                     double stdev = sqrt(sqDiffSum / (count));
-                
+
                     result = (int)round(stdev);
                     break;
                 }
-                
+
                 default: break;
             }
             cell->value = result;
@@ -395,14 +395,14 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     LLQueueData llData;
     llData.head = &queueHead;
     llData.tail = &queueTail;
-    
+
     int affectedCapacity = 100, affectedCount = 0;
     Cell **affected = malloc(affectedCapacity * sizeof(Cell *));
     if (!affected) {
         perror("Failed to allocate affected cells array");
         exit(EXIT_FAILURE);
     }
- 
+
     if (start->dependents) {
         avl_traverse(start->dependents, bfs_enqueue_callback_ll, &llData);
     }
@@ -420,7 +420,7 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
         if (curr->dependents)
             avl_traverse(curr->dependents, bfs_enqueue_callback_ll, &llData);
     }
-    
+
     int *inDegree = malloc(affectedCount * sizeof(int));
     for (int i = 0; i < affectedCount; i++) {
         inDegree[i] = 0;
@@ -433,7 +433,7 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
             avl_traverse(affected[i]->dependencies, dep_check_callback, &depData);
         }
     }
-    
+
     int *zeroQueue = malloc(affectedCount * sizeof(int));
     int zeroQueueSize = 0;
     for (int i = 0; i < affectedCount; i++) {
@@ -441,14 +441,14 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
             zeroQueue[zeroQueueSize++] = i;
         }
     }
-    
+
     ProcessDepData pData;
     pData.affected = affected;
     pData.affectedCount = affectedCount;
     pData.inDegree = inDegree;
     pData.zeroQueue = zeroQueue;
     pData.zeroQueueSize = &zeroQueueSize;
-    
+
     int zeroQueueFront = 0;
     while (zeroQueueFront < zeroQueueSize) {
         int idx = zeroQueue[zeroQueueFront++];
@@ -639,6 +639,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     printf("[%.1f] (Error: Invalid literal operand '%s' for SLEEP.) ", spreadsheet->time, paramStr);
                     return;
                 }
+
             }
             // printf("Sleeping for %d seconds... ", seconds);
             sleep(seconds);
@@ -870,7 +871,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 }
             } else {
                 char extra2[10];
-                if (sscanf(operand1Str, "%d%9s", &literal1, extra2) != 1) {
+                if (sscanf(operand2Str, "%d%9s", &literal2, extra2) != 1) {
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
