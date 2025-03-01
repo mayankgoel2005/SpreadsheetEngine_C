@@ -262,18 +262,29 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
                 case OP_ADV_MAX: result = maxVal; break;
                 case OP_ADV_AVG: result = (count > 0) ? (int)(sum / count) : 0; break;
                 case OP_ADV_STDEV: {
-                    double mean = (count > 0) ? (double) sum / count : 0.0;
-                    double sqDiffSum = 0.0;
+                    if (count <= 1) {  
+                        result = 0;
+                        break;
+                    }                
+                    double sum = 0.0, mean, sqDiffSum = 0.0;
+                    for (int r = rStart; r <= rEnd; r++) {
+                        for (int c = cStart; c <= cEnd; c++) {
+                            sum += spreadsheet->table[r][c].value;
+                        }
+                    }                    
+                    mean = sum / count; 
                     for (int r = rStart; r <= rEnd; r++) {
                         for (int c = cStart; c <= cEnd; c++) {
                             double diff = spreadsheet->table[r][c].value - mean;
                             sqDiffSum += diff * diff;
                         }
                     }
-                    double stdev = (count > 0) ? sqrt(sqDiffSum / count) : 0.0;
-                    result = (int) stdev;
+                    double stdev = sqrt(sqDiffSum / (count));
+                
+                    result = (int)round(stdev);
                     break;
                 }
+                
                 default: break;
             }
             cell->value = result;
