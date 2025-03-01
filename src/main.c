@@ -40,6 +40,7 @@ int main(int argc, char *argv[]) {
 
     printf("Spreadsheet initialized. Type 'q' to quit.\n");
     printSpreadsheet(spreadsheet);
+    printf("[0.0] (ok) ")
 
     char input[MAX_INPUT_SIZE];
     while (1) {
