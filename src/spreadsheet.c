@@ -427,12 +427,10 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     pData.zeroQueueSize = &zeroQueueSize;
     
     int zeroQueueFront = 0;
-    int processedCount = 0;
     while (zeroQueueFront < zeroQueueSize) {
         int idx = zeroQueue[zeroQueueFront++];
         Cell *cell = affected[idx];
         recalc_cell(cell, spreadsheet);
-        processedCount++;
         if (cell->dependents)
             avl_traverse(cell->dependents, process_dependent_callback, &pData);
     }
