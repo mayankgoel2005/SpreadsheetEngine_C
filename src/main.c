@@ -48,7 +48,7 @@ int main(int argc, char *argv[]) {
         
         printf("> ");
         if (!fgets(input, sizeof(input), stdin)) {
-            printf("[0.0] (unrecognized cmd)");
+            printf("[0.0] (unrecognized cmd) ");
             break;
         }
 

@@ -41,7 +41,7 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
         // printf("Exiting the spreadsheet. Goodbye!  %.2f\n",spreadsheet->time );
-        printf("[%.1f] (ok) \n", spreadsheet->time);
+        printf("[%.1f] (ok)\n", spreadsheet->time);
         return 0;
     }
     if (strcmp(input, "disable_output") == 0) {
@@ -49,7 +49,7 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
         // printf("Disabled output: Please Type \"enable_output\" to enable output! %.2f \n",spreadsheet->time );
-        printf("[%.1f] (ok) \n", spreadsheet->time);
+        printf("[%.1f] (ok) ", spreadsheet->time);
         spreadsheet->display=1;
         return 1;
     }
@@ -59,9 +59,10 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
         // printf("Output enabled!  %.2f \n",spreadsheet->time );
-        printf("[%.1f] (ok) \n", spreadsheet->time);
+        
         spreadsheet->display=0;
         printSpreadsheet(spreadsheet);
+        printf("[%.1f] (ok) ", spreadsheet->time);
         return 1;
     }
 
@@ -72,8 +73,9 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
         // printf("Scrolled Up  %.2f\n",spreadsheet->time );
-        printf("ok %.0f \n", spreadsheet->time);
+        
         printSpreadsheet(spreadsheet);
+        printf("[%.1f] (ok) ", spreadsheet->time);
         return 1;
     } else if (strcmp(input, "s") == 0) {
         scrollDown(spreadsheet);
@@ -81,8 +83,8 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
         // printf("Scrolled Up  %.2f\n",spreadsheet->time );
-        printf("ok %.0f \n", spreadsheet->time);
         printSpreadsheet(spreadsheet);
+        printf("[%.1f] (ok) ", spreadsheet->time);
         return 1;
     } else if (strcmp(input, "a") == 0) {
         scrollLeft(spreadsheet);
@@ -90,8 +92,8 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
         // printf("Scrolled Left  %.2f\n",spreadsheet->time );
-        printf("ok %.0f \n", spreadsheet->time);
         printSpreadsheet(spreadsheet);
+        printf("[%.1f] (ok) ", spreadsheet->time);
         return 1;
     } else if (strcmp(input, "d") == 0) {
         scrollRight(spreadsheet);
@@ -99,8 +101,8 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
         // printf("Scrolled Right  %.2f\n",spreadsheet->time );
-        printf("ok %.0f \n", spreadsheet->time);
         printSpreadsheet(spreadsheet);
+        printf("[%.1f] (ok) ", spreadsheet->time);
         return 1;
     }
 
@@ -114,7 +116,7 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
             cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = cpu_time_used;
             // printf("Invalid format! Use: scroll_to <CellRef>  %.2f\n", spreadsheet->time );
-            printf("[%.1f] Error \n", spreadsheet->time);
+            printf("[%.1f] Error ", spreadsheet->time);
             return 1;
         }
         cellRef = token;
@@ -125,7 +127,7 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
             cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = cpu_time_used;
             // printf("Too many arguments! Use: scroll_to <CellRef>  %.2f\n", spreadsheet->time );
-            printf("[%.1f] Error \n", spreadsheet->time);
+            printf("[%.1f] Error ", spreadsheet->time);
             return 1;
         }
 
@@ -136,7 +138,7 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
             cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = cpu_time_used;
             //printf(" Invalid column format! Use: scroll_to <A1 - ZZZ999> %.2f\n", spreadsheet->time );
-            printf("[%.1f] Error \n", spreadsheet->time);
+            printf("[%.1f] Error ", spreadsheet->time);
             return 1;
         }
 
@@ -150,7 +152,7 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
             cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = cpu_time_used;
             // printf("Invalid row format! Use: scroll_to <A1 - ZZZ999> %.2f\n", spreadsheet->time );
-            printf("[%.1f] Error \n", spreadsheet->time);
+            printf("[%.1f] Error ", spreadsheet->time);
             return 1;
         }
 
@@ -162,7 +164,7 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
             cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = cpu_time_used;
             // printf("Row should be in range (1, %d) %.2f \n" ,spreadsheet->rows , spreadsheet->time);
-            printf("[%.1f] Error \n", spreadsheet->time);
+            printf("[%.1f] Error ", spreadsheet->time);
             return 1;
         }
         if (col > spreadsheet->cols || col <= 0) {
@@ -170,7 +172,7 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
             cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = cpu_time_used;
             // printf(" Column should be in range (A - %c)\n %.2f" , 'A' + spreadsheet->cols - 1, spreadsheet->time);
-            printf("[%.1f] Error \n", spreadsheet->time);
+            printf("[%.1f] Error ", spreadsheet->time);
             return 1;
         }
         
@@ -180,8 +182,8 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
         // printf("Scrolled to %s %.2f\n", cellRef, spreadsheet->time);
-        printf("[%.1f] (ok) \n", spreadsheet->time);
         printSpreadsheet(spreadsheet);
+        printf("[%.1f] (ok) ", spreadsheet->time);
         return 1;
     }  
 
