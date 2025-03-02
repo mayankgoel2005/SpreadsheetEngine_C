@@ -574,7 +574,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             printSpreadsheet(spreadsheet);
             printf("[%.1f] (Error: Invalid input format, unexpected characters found after function.) ", spreadsheet->time);
             return;
-        } else if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])", targetRef, opStr, paramStr) != 3) {
+        } else if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])", targetRef, opStr, paramStr) != 3 || strchr(input, ')') == NULL) {
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
@@ -624,7 +624,8 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 }
                 seconds = source->value;
             } else {
-                if (sscanf(paramStr, "%d", &seconds) != 1) {
+                char extra[10];  // Buffer to store extra characters if present
+                if (sscanf(paramStr, "%d%s", &seconds, extra) != 1) {  // Checks if there's any non-integer part
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
@@ -670,7 +671,14 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             size_t len1 = colon - paramStr;
             strncpy(startRef, paramStr, len1);
             startRef[len1] = '\0';
-            strcpy(endRef, colon + 1);
+            if (sscanf(colon + 1, "%9s", endRef) != 1 || strchr(colon + 1, ' ')) {
+                global_end = clock();
+                global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
+                spreadsheet->time = global_cpu_time_used;
+                printSpreadsheet(spreadsheet);
+                printf("[%.1f] (Error: Invalid range format: %s)\n", spreadsheet->time, paramStr);
+                return;
+            }
             parseCellReference(startRef, &rStart, &cStart);
             parseCellReference(endRef, &rEnd, &cEnd);
             if (rStart > rEnd || cStart > cEnd) {

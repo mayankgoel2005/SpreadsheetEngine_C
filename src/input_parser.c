@@ -41,7 +41,6 @@ int parseInput(char *input, Spreadsheet *spreadsheet, clock_t start) {
         cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
         spreadsheet->time = cpu_time_used;
         // printf("Exiting the spreadsheet. Goodbye!  %.2f\n",spreadsheet->time );
-        printf("[%.1f] (ok)\n", spreadsheet->time);
         return 0;
     }
     if (strcmp(input, "disable_output") == 0) {
