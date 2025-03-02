@@ -28,6 +28,8 @@
 clock_t global_end;
 double global_cpu_time_used;
 
+/* ---------------- Queue & BFS-based cycle detection ---------------- */
+
 typedef struct Node {
     Cell *cell;
     struct Node *next;
@@ -154,20 +156,22 @@ int checkAdvancedFormulaCycleNew(Cell *target, int rStart, int cStart, int rEnd,
     cbData.rEnd = rEnd;
     cbData.cEnd = cEnd;
     cbData.foundCycle = 0;
-
+    
     int index = target->selfRow * spreadsheet->cols + target->selfCol;
     visited[index] = 1;
     enqueue(&queueHead, &queueTail, target);
-
+    
     while (queueHead != NULL && !cbData.foundCycle) {
         Cell *curr = dequeue(&queueHead, &queueTail);
         if (curr->dependents)
             avl_traverse(curr->dependents, bfs_enqueue_if_in_range, &cbData);
     }
-
+    
     free(visited);
     return cbData.foundCycle;
 }
+
+/* ---------------- Dependency management ---------------- */
 
 static void remove_dependent_callback(Cell *source, void *target_ptr) {
     Cell *target = (Cell *) target_ptr;
@@ -189,6 +193,8 @@ void addDependency(Cell *targetCell, Cell *source) {
 void addDependent(Cell *sourceCell, Cell *target) {
     sourceCell->dependents = avl_insert(sourceCell->dependents, target, avl_cell_compare);
 }
+
+/* ---------------- Recalculation functions ---------------- */
 
 void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
     if (cell->op != OP_NONE) {
@@ -214,6 +220,8 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
             }
             if (foundError) {
                 cell->error = 1;
+                printSpreadsheet(spreadsheet);
+                printf("[%.1f] (Error: Calculation error in advanced formula.) ", spreadsheet->time);
                 return;
             }
             int result = 0;
@@ -268,6 +276,8 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
                 cell->error = 1;
                 cell->value = 0;
                 cell->op = OP_ADD;
+                printSpreadsheet(spreadsheet);
+                printf("[%.1f] (Error: Dependency error.) ", spreadsheet->time);
                 return;
             }
             int op1 = cell->operand1IsLiteral ? cell->operand1Literal : (cell->operand1 ? cell->operand1->value : 0);
@@ -287,6 +297,8 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
                     if (op2 == 0) {
                         cell->error = 1;
                         cell->value = 0;
+                        printSpreadsheet(spreadsheet);
+                        printf("[%.1f] (Error: Division by zero.) ", spreadsheet->time);
                         return;
                     }
                     result = op1 / op2;
@@ -436,6 +448,8 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     free(zeroQueue);
 }
 
+/* ---------------- Advanced Formula List Management ---------------- */
+
 static void addAdvancedFormula(Spreadsheet *spreadsheet, Cell *cell) {
     for (int i = 0; i < spreadsheet->advancedFormulasCount; i++) {
         if (spreadsheet->advancedFormulas[i] == cell)
@@ -511,6 +525,7 @@ static void recalcAllAdvancedFormulas(Spreadsheet *spreadsheet, clock_t start) {
          global_end = clock();
          global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
          spreadsheet->time = global_cpu_time_used;
+         printSpreadsheet(spreadsheet);
          printf("[%.1f] (Error: Cycle detected in advanced formulas.) ", spreadsheet->time);
          free(inDegree);
          free(zeroQueue);
@@ -527,6 +542,8 @@ static void recalcAllAdvancedFormulas(Spreadsheet *spreadsheet, clock_t start) {
     free(zeroQueue);
     free(topoOrder);
 }
+
+/* ---------------- Main operation handler ---------------- */
 
 void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start) {
     if (strcmp(input, "disable_output") == 0) {
@@ -554,12 +571,14 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
+            printSpreadsheet(spreadsheet);
             printf("[%.1f] (Error: Invalid input format, unexpected characters found after function.) ", spreadsheet->time);
             return;
         } else if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])", targetRef, opStr, paramStr) != 3) {
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
+            printSpreadsheet(spreadsheet);
             printf("[%.1f] (Error: Invalid advanced formula format.) ", spreadsheet->time);
             return;
         }
@@ -570,6 +589,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
+            printSpreadsheet(spreadsheet);
             printf("[%.1f] (Error: Target cell %s is out of bounds.) ", spreadsheet->time, targetRef);
             return;
         }
@@ -589,6 +609,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
+                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Cell reference %s is out of bounds.) ", spreadsheet->time, paramStr);
                     return;
                 }
@@ -598,6 +619,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 if (source->error) {
                     targetCell->error = 1;
                     printSpreadsheet(spreadsheet);
+                    printf("[%.1f] (Error: Source cell error.) ", spreadsheet->time);
                     return;
                 }
                 seconds = source->value;
@@ -606,6 +628,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
+                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Invalid literal operand '%s' for SLEEP.) ", spreadsheet->time, paramStr);
                     return;
                 }
@@ -640,6 +663,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
+                printSpreadsheet(spreadsheet);
                 printf("[%.1f] (Error: Invalid range format: %s) ", spreadsheet->time, paramStr);
                 return;
             }
@@ -653,6 +677,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
+                printSpreadsheet(spreadsheet);
                 printf("[%.1f] (Error: Invalid range order: %s (should be top-left:bottom-right).) ", spreadsheet->time, paramStr);
                 return;
             }
@@ -661,6 +686,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
+                printSpreadsheet(spreadsheet);
                 printf("[%.1f] (Error: Advanced formula creates a direct self-reference. Formula rejected.) ", spreadsheet->time);
                 return;
             }
@@ -668,6 +694,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
+                printSpreadsheet(spreadsheet);
                 printf("[%.1f] (Error: Advanced formula would create a cyclic dependency. Formula rejected.) ", spreadsheet->time);
                 return;
             }
@@ -712,6 +739,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
+                printSpreadsheet(spreadsheet);
                 printf("[%.1f] (Error: Unsupported advanced operation '%s'.) ", spreadsheet->time, opStr);
                 return;
             }
@@ -743,6 +771,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
+            printSpreadsheet(spreadsheet);
             printf("[%.1f] (Error: Invalid input format.) ", spreadsheet->time);
             return;
         }
@@ -752,6 +781,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
+            printSpreadsheet(spreadsheet);
             printf("[%.1f] (Error: Target cell out of bounds.) ", spreadsheet->time);
             return;
         }
@@ -759,11 +789,13 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         clearDependencies(targetCell);
 
         int val;
-        if (rhs[0] == '-') {
+        /* If rhs starts with '-' and does NOT contain an operator later, treat it as a literal negative */
+        if (rhs[0] == '-' && !(strchr(rhs+1, '+') || strchr(rhs+1, '-') || strchr(rhs+1, '*') || strchr(rhs+1, '/'))) {
             if (sscanf(rhs + 1, "%d%9s", &val, extra) != 1) {
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
+                printSpreadsheet(spreadsheet);
                 printf("[%.1f] (Error) ", spreadsheet->time);
                 return;
             }
@@ -777,6 +809,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             printSpreadsheet(spreadsheet);
             printf("[%.1f] (ok) ", spreadsheet->time);
         }
+        /* Else if rhs contains a binary operator, handle it as an expression */
         else if (strchr(rhs, '+') || strchr(rhs, '-') || strchr(rhs, '*') || strchr(rhs, '/')) {
             char operand1Str[20], operand2Str[20];
             char opChar;
@@ -784,6 +817,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
+                printSpreadsheet(spreadsheet);
                 printf("[%.1f] (Error: Invalid binary operation format.) ", spreadsheet->time);
                 return;
             }
@@ -797,6 +831,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
+                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Operand cell %s is out of bounds.) ", spreadsheet->time, operand1Str);
                     return;
                 }
@@ -805,6 +840,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
+                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Cyclic dependency detected via operand %s. Formula rejected.) ", spreadsheet->time, operand1Str);
                     return;
                 }
@@ -814,6 +850,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
+                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Invalid literal operand '%s'.) ", spreadsheet->time, operand1Str);
                     return;
                 }
@@ -826,6 +863,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
+                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Operand cell %s is out of bounds.) ", spreadsheet->time, operand2Str);
                     return;
                 }
@@ -834,6 +872,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
+                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Cyclic dependency detected via operand %s. Formula rejected.) ", spreadsheet->time, operand2Str);
                     return;
                 }
@@ -843,12 +882,13 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
+                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Invalid literal operand '%s'.) ", spreadsheet->time, operand2Str);
                     return;
                 }
                 operand2IsLiteral = 1;
             }
-
+            
             if ((!operand1IsLiteral && operand1->error) ||
                 (!operand2IsLiteral && operand2->error)) {
                 targetCell->error = 1;
@@ -880,7 +920,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 printf("[%.1f] (ok) ", spreadsheet->time);
                 return;
             }
-
+            
             int result = 0;
             switch (opChar) {
                 case '+': result = (operand1IsLiteral ? literal1 : operand1->value) +
@@ -895,10 +935,13 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                                  (operand2IsLiteral ? literal2 : operand2->value);
                           targetCell->op = OP_MUL;
                           break;
-                case '/':
+                case '/': 
                           if ((operand2IsLiteral ? literal2 : operand2->value) == 0) {
                               targetCell->error = 1;
                               result = 0;
+                              printSpreadsheet(spreadsheet);
+                              printf("[%.1f] (Error: Division by zero.) ", spreadsheet->time);
+                              return;
                           } else {
                               result = (operand1IsLiteral ? literal1 : operand1->value) /
                                        (operand2IsLiteral ? literal2 : operand2->value);
@@ -910,6 +953,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                           global_end = clock();
                           global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                           spreadsheet->time = global_cpu_time_used;
+                          printSpreadsheet(spreadsheet);
                           printf("[%.1f] (Error: Unsupported operation '%c'.) ", spreadsheet->time, opChar);
                           return;
             }
@@ -949,6 +993,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
+                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Cell reference out of bounds (%s).) ", spreadsheet->time, rhs);
                     return;
                 }
@@ -957,6 +1002,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
+                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Cyclic dependency detected via direct assignment (%s).) ", spreadsheet->time, rhs);
                     return;
                 }
@@ -972,6 +1018,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
+                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Invalid literal in assignment.) ", spreadsheet->time);
                     return;
                 }
@@ -993,6 +1040,8 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         }
     }
 }
+
+/* ---------------- Spreadsheet Initialization & Display ---------------- */
 
 Spreadsheet *initializeSpreadsheet(int rows, int cols) {
     Spreadsheet *spreadsheet = malloc(sizeof(Spreadsheet));
