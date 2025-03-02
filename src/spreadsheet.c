@@ -28,13 +28,26 @@
 clock_t global_end;
 double global_cpu_time_used;
 
-/* ---------------- Queue & BFS-based cycle detection ---------------- */
+/*
+   ---------------- Queue & BFS-based cycle detection ----------------
 
+   The code below implements a simple queue using a linked list.
+   This queue is used for breadth-first search (BFS) to detect cycles in cell dependencies.
+*/
+
+/*
+ * The Node structure represents an element in our queue.
+ * It holds a pointer to a Cell and a pointer to the next Node.
+ */
 typedef struct Node {
     Cell *cell;
     struct Node *next;
 } Node;
 
+/*
+ * The enqueue function adds a new cell to the end of the BFS queue.
+ * It dynamically allocates a new node and updates the head and tail pointers accordingly.
+ */
 void enqueue(Node **head, Node **tail, Cell *cell) {
     Node *newNode = malloc(sizeof(Node));
     if (!newNode) {
@@ -51,6 +64,10 @@ void enqueue(Node **head, Node **tail, Cell *cell) {
     }
 }
 
+/*
+ * The dequeue function removes and returns the cell at the front of the queue.
+ * It handles updating the head and tail pointers and frees the removed node.
+ */
 Cell *dequeue(Node **head, Node **tail) {
     if (*head == NULL)
         return NULL;
@@ -63,6 +80,11 @@ Cell *dequeue(Node **head, Node **tail) {
     return cell;
 }
 
+/*
+   The BFSData structure holds information needed for a BFS traversal.
+   It includes pointers to the queue's head and tail, an array to track visited cells,
+   the total number of cells in the spreadsheet, and a pointer to the spreadsheet.
+*/
 typedef struct {
     Node **head;
     Node **tail;
@@ -71,6 +93,10 @@ typedef struct {
     Spreadsheet *spreadsheet;
 } BFSData;
 
+/*
+ * This callback function is called during the BFS traversal.
+ * It checks if the cell has been visited; if not, it marks the cell as visited and enqueues it.
+ */
 void bfs_enqueue_if_not_visited(Cell *cell, void *data) {
     BFSData *bfsData = (BFSData *) data;
     int idx = cell->selfRow * bfsData->spreadsheet->cols + cell->selfCol;
@@ -80,6 +106,11 @@ void bfs_enqueue_if_not_visited(Cell *cell, void *data) {
     }
 }
 
+/*
+ * The existsPath function determines whether there is a dependency path between two cells.
+ * It starts from the source cell and performs a BFS looking for the target cell.
+ * This function is essential for detecting cycles in cell dependencies.
+ */
 int existsPath(Cell *source, Cell *target, Spreadsheet *spreadsheet) {
     int totalCells = spreadsheet->rows * spreadsheet->cols;
     int *visited = calloc(totalCells, sizeof(int));
@@ -111,10 +142,25 @@ int existsPath(Cell *source, Cell *target, Spreadsheet *spreadsheet) {
     return found;
 }
 
+/*
+ * The checkCycleNew function is simply a wrapper around existsPath.
+ * It inverts the order of parameters to check for cycles when adding dependencies.
+ */
 int checkCycleNew(Cell *operand, Cell *target, Spreadsheet *spreadsheet) {
     return existsPath(target, operand, spreadsheet);
 }
 
+/*
+   ---------------- Optimized Advanced Formula Cycle Detection ----------------
+
+   The following code is used to detect cycles in advanced formulas more efficiently.
+   Instead of checking every cell individually, it performs one BFS from the target cell over a range.
+*/
+
+/*
+ * CycleBFSData stores extra information needed during BFS for advanced formulas.
+ * In addition to the queue and visited array, it keeps the boundaries of the cell range and a flag if a cycle is found.
+ */
 typedef struct {
     Node **head;
     Node **tail;
@@ -124,12 +170,16 @@ typedef struct {
     int foundCycle;
 } CycleBFSData;
 
+/*
+ * The bfs_enqueue_if_in_range callback is similar to the previous BFS callback but checks whether the enqueued cell falls within a specified range.
+ * If it does, it sets the cycle flag.
+ */
 void bfs_enqueue_if_in_range(Cell *cell, void *data) {
     CycleBFSData *cbData = (CycleBFSData *) data;
     int idx = cell->selfRow * cbData->spreadsheet->cols + cell->selfCol;
     if (!cbData->visited[idx]) {
         cbData->visited[idx] = 1;
-        /* Check if this cell is within the advanced formula range */
+        /* If the cell lies within the target range, a cycle is detected */
         if (cell->selfRow >= cbData->rStart && cell->selfRow <= cbData->rEnd &&
             cell->selfCol >= cbData->cStart && cell->selfCol <= cbData->cEnd) {
             cbData->foundCycle = 1;
@@ -138,6 +188,11 @@ void bfs_enqueue_if_in_range(Cell *cell, void *data) {
     }
 }
 
+/*
+ * The checkAdvancedFormulaCycleNew function performs a BFS from the target cell,
+ * but only enqueues cells that are in the given advanced formula range.
+ * It returns 1 if a cycle is found in that range.
+ */
 int checkAdvancedFormulaCycleNew(Cell *target, int rStart, int cStart, int rEnd, int cEnd, Spreadsheet *spreadsheet) {
     int totalCells = spreadsheet->rows * spreadsheet->cols;
     int *visited = calloc(totalCells, sizeof(int));
@@ -156,28 +211,41 @@ int checkAdvancedFormulaCycleNew(Cell *target, int rStart, int cStart, int rEnd,
     cbData.rEnd = rEnd;
     cbData.cEnd = cEnd;
     cbData.foundCycle = 0;
-    
+
     int index = target->selfRow * spreadsheet->cols + target->selfCol;
     visited[index] = 1;
     enqueue(&queueHead, &queueTail, target);
-    
+
     while (queueHead != NULL && !cbData.foundCycle) {
         Cell *curr = dequeue(&queueHead, &queueTail);
         if (curr->dependents)
             avl_traverse(curr->dependents, bfs_enqueue_if_in_range, &cbData);
     }
-    
+
     free(visited);
     return cbData.foundCycle;
 }
 
-/* ---------------- Dependency management ---------------- */
+/*
+   ---------------- Dependency management ----------------
 
+   The next section manages how cells keep track of which other cells they depend on or which cells depend on them.
+*/
+
+/*
+ * remove_dependent_callback is used to remove a target cell from the list of dependents of a source cell.
+ * It is called when clearing dependencies.
+ */
 static void remove_dependent_callback(Cell *source, void *target_ptr) {
     Cell *target = (Cell *) target_ptr;
     source->dependents = avl_delete(source->dependents, target, avl_cell_compare);
 }
 
+/*
+ * clearDependencies removes all dependency relationships for a cell.
+ * It traverses the cell's dependency tree, removes the cell from the dependents' lists,
+ * frees the dependency tree, and resets the pointer.
+ */
 void clearDependencies(Cell *cell) {
     if (cell->dependencies) {
         avl_traverse(cell->dependencies, remove_dependent_callback, cell);
@@ -186,16 +254,34 @@ void clearDependencies(Cell *cell) {
     }
 }
 
+/*
+ * addDependency records that a target cell depends on the source cell.
+ * This is important for ensuring the recalculation of cells in the correct order.
+ */
 void addDependency(Cell *targetCell, Cell *source) {
     targetCell->dependencies = avl_insert(targetCell->dependencies, source, avl_cell_compare);
 }
 
+/*
+ * addDependent records that a source cell has a dependent cell.
+ * This helps in propagating updates when the source cell changes.
+ */
 void addDependent(Cell *sourceCell, Cell *target) {
     sourceCell->dependents = avl_insert(sourceCell->dependents, target, avl_cell_compare);
 }
 
-/* ---------------- Recalculation functions ---------------- */
+/*
+   ---------------- Recalculation functions ----------------
 
+   The following functions handle recalculating cell values.
+   They support both advanced formulas (like SUM, AVG, etc.) and simple binary operations.
+*/
+
+/*
+ * recalc_cell recalculates a cell's value based on its type of operation.
+ * It handles advanced formulas by iterating over a range of cells,
+ * and simple operations by applying arithmetic to one or two operands.
+ */
 void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
     if (cell->op != OP_NONE) {
         if (cell->op >= OP_ADV_SUM && cell->op <= OP_ADV_STDEV) {
@@ -220,8 +306,6 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
             }
             if (foundError) {
                 cell->error = 1;
-                printSpreadsheet(spreadsheet);
-                printf("[%.1f] (Error: Calculation error in advanced formula.) ", spreadsheet->time);
                 return;
             }
             int result = 0;
@@ -276,8 +360,6 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
                 cell->error = 1;
                 cell->value = 0;
                 cell->op = OP_ADD;
-                printSpreadsheet(spreadsheet);
-                printf("[%.1f] (Error: Dependency error.) ", spreadsheet->time);
                 return;
             }
             int op1 = cell->operand1IsLiteral ? cell->operand1Literal : (cell->operand1 ? cell->operand1->value : 0);
@@ -297,8 +379,6 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
                     if (op2 == 0) {
                         cell->error = 1;
                         cell->value = 0;
-                        printSpreadsheet(spreadsheet);
-                        printf("[%.1f] (Error: Division by zero.) ", spreadsheet->time);
                         return;
                     }
                     result = op1 / op2;
@@ -319,12 +399,28 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
     }
 }
 
+/*
+ * recalc_basic_recursive is a straightforward recursive function that recalculates
+ * the value of the given cell and then recursively recalculates all of its dependents.
+ */
 void recalc_basic_recursive(Cell *cell, Spreadsheet *spreadsheet) {
     recalc_cell(cell, spreadsheet);
     if (cell->dependents)
         avl_traverse(cell->dependents, (void (*)(Cell*, void*))recalc_basic_recursive, spreadsheet);
 }
 
+/*
+   ---------------- Topological Recalculation for Advanced Formulas ----------------
+
+   When multiple cells depend on one another, the order of recalculation is crucial.
+   The following code determines an order in which cells can be recalculated without errors,
+   using a topological sort based on dependency in-degrees.
+*/
+
+/*
+ * findAffectedIndex searches for a given cell in the list of affected cells.
+ * It returns the index of the cell or -1 if the cell is not found.
+ */
 int findAffectedIndex(Cell **arr, int count, Cell *cell) {
     for (int i = 0; i < count; i++) {
         if (arr[i] == cell)
@@ -333,6 +429,11 @@ int findAffectedIndex(Cell **arr, int count, Cell *cell) {
     return -1;
 }
 
+/*
+ * DepCallbackData is used when updating the in-degree of cells.
+ * It contains the array of affected cells, the number of them,
+ * the target index currently being processed, and the in-degree array.
+ */
 typedef struct {
     Cell **affected;
     int affectedCount;
@@ -340,6 +441,9 @@ typedef struct {
     int *inDegree;
 } DepCallbackData;
 
+/*
+ * dep_check_callback is a callback used to increase the in-degree of a cell if it is found in the dependency list.
+ */
 void dep_check_callback(Cell *dep, void *data) {
     DepCallbackData *dData = (DepCallbackData *) data;
     int idx = findAffectedIndex(dData->affected, dData->affectedCount, dep);
@@ -348,6 +452,10 @@ void dep_check_callback(Cell *dep, void *data) {
     }
 }
 
+/*
+ * ProcessDepData is a helper structure used during the topological sorting process.
+ * It holds the affected cells array, in-degrees, and a queue of cells with zero in-degree.
+ */
 typedef struct {
     Cell **affected;
     int affectedCount;
@@ -356,6 +464,10 @@ typedef struct {
     int *zeroQueueSize;
 } ProcessDepData;
 
+/*
+ * process_dependent_callback is called for each dependent cell.
+ * It reduces the in-degree of the cell and if it reaches zero, adds it to the zeroQueue.
+ */
 void process_dependent_callback(Cell *dep, void *data) {
     ProcessDepData *pData = (ProcessDepData *) data;
     int idx = findAffectedIndex(pData->affected, pData->affectedCount, dep);
@@ -368,16 +480,27 @@ void process_dependent_callback(Cell *dep, void *data) {
     }
 }
 
+/*
+ * LLQueueData is a small structure for holding the head and tail pointers of a linked-list queue.
+ * This queue is used in the topological sorting process.
+ */
 typedef struct {
     Node **head;
     Node **tail;
 } LLQueueData;
 
+/*
+ * bfs_enqueue_callback_ll is used to enqueue cells into the linked-list queue for the topological sort.
+ */
 void bfs_enqueue_callback_ll(Cell *cell, void *data) {
     LLQueueData *qdata = (LLQueueData *) data;
     enqueue(qdata->head, qdata->tail, cell);
 }
 
+/*
+ * recalcUsingTopoOrder recalculates all cells affected by a change in a topologically sorted order.
+ * This ensures that no cell is calculated before all of its dependencies have been updated.
+ */
 void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     Node *queueHead = NULL, *queueTail = NULL;
     LLQueueData llData;
@@ -448,8 +571,17 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     free(zeroQueue);
 }
 
-/* ---------------- Advanced Formula List Management ---------------- */
+/*
+   ---------------- Advanced Formula List Management ----------------
 
+   This section manages a list of cells that use advanced formulas.
+   It provides functions to add and remove cells from the list, and to recalculate all advanced formulas.
+*/
+
+/*
+ * addAdvancedFormula adds a cell to the spreadsheet's advanced formulas list if it's not already present.
+ * It also resizes the list if necessary.
+ */
 static void addAdvancedFormula(Spreadsheet *spreadsheet, Cell *cell) {
     for (int i = 0; i < spreadsheet->advancedFormulasCount; i++) {
         if (spreadsheet->advancedFormulas[i] == cell)
@@ -467,6 +599,10 @@ static void addAdvancedFormula(Spreadsheet *spreadsheet, Cell *cell) {
     spreadsheet->advancedFormulas[spreadsheet->advancedFormulasCount++] = cell;
 }
 
+/*
+ * removeAdvancedFormula removes a cell from the advanced formulas list.
+ * It does so by replacing the cell with the last cell in the list and then reducing the count.
+ */
 static void removeAdvancedFormula(Spreadsheet *spreadsheet, Cell *cell) {
     for (int i = 0; i < spreadsheet->advancedFormulasCount; i++) {
         if (spreadsheet->advancedFormulas[i] == cell) {
@@ -477,6 +613,11 @@ static void removeAdvancedFormula(Spreadsheet *spreadsheet, Cell *cell) {
     }
 }
 
+/*
+ * recalcAllAdvancedFormulas recalculates every advanced formula in the spreadsheet.
+ * It first computes a topological order to ensure proper dependency order.
+ * If a cycle is detected among advanced formulas, an error message is printed.
+ */
 static void recalcAllAdvancedFormulas(Spreadsheet *spreadsheet, clock_t start) {
     int count = spreadsheet->advancedFormulasCount;
     if (count == 0)
@@ -525,7 +666,6 @@ static void recalcAllAdvancedFormulas(Spreadsheet *spreadsheet, clock_t start) {
          global_end = clock();
          global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
          spreadsheet->time = global_cpu_time_used;
-         printSpreadsheet(spreadsheet);
          printf("[%.1f] (Error: Cycle detected in advanced formulas.) ", spreadsheet->time);
          free(inDegree);
          free(zeroQueue);
@@ -543,8 +683,13 @@ static void recalcAllAdvancedFormulas(Spreadsheet *spreadsheet, clock_t start) {
     free(topoOrder);
 }
 
-/* ---------------- Main operation handler ---------------- */
+/*
+   ---------------- Main operation handler ----------------
 
+   The handleOperation function is the entry point for processing any operation or formula entered by the user.
+   It determines whether the input is for an advanced formula, a simple arithmetic operation, or a direct cell assignment.
+   It also handles output control commands and error checking.
+*/
 void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start) {
     if (strcmp(input, "disable_output") == 0) {
         spreadsheet->display = 1;
@@ -571,14 +716,12 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
-            printSpreadsheet(spreadsheet);
             printf("[%.1f] (Error: Invalid input format, unexpected characters found after function.) ", spreadsheet->time);
             return;
-        } else if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])", targetRef, opStr, paramStr) != 3 || strchr(input, ')') == NULL) {
+        } else if (sscanf(input, "%9[^=]=%9[A-Z](%29[^)])", targetRef, opStr, paramStr) != 3) {
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
-            printSpreadsheet(spreadsheet);
             printf("[%.1f] (Error: Invalid advanced formula format.) ", spreadsheet->time);
             return;
         }
@@ -589,7 +732,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
-            printSpreadsheet(spreadsheet);
             printf("[%.1f] (Error: Target cell %s is out of bounds.) ", spreadsheet->time, targetRef);
             return;
         }
@@ -609,7 +751,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
-                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Cell reference %s is out of bounds.) ", spreadsheet->time, paramStr);
                     return;
                 }
@@ -619,17 +760,14 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 if (source->error) {
                     targetCell->error = 1;
                     printSpreadsheet(spreadsheet);
-                    printf("[%.1f] (Error: Source cell error.) ", spreadsheet->time);
                     return;
                 }
                 seconds = source->value;
             } else {
-                char extra[10];  // Buffer to store extra characters if present
-                if (sscanf(paramStr, "%d%s", &seconds, extra) != 1) {  // Checks if there's any non-integer part
+                if (sscanf(paramStr, "%d", &seconds) != 1) {
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
-                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Invalid literal operand '%s' for SLEEP.) ", spreadsheet->time, paramStr);
                     return;
                 }
@@ -664,28 +802,19 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
-                printSpreadsheet(spreadsheet);
                 printf("[%.1f] (Error: Invalid range format: %s) ", spreadsheet->time, paramStr);
                 return;
             }
             size_t len1 = colon - paramStr;
             strncpy(startRef, paramStr, len1);
             startRef[len1] = '\0';
-            if (sscanf(colon + 1, "%9s", endRef) != 1 || strchr(colon + 1, ' ')) {
-                global_end = clock();
-                global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
-                spreadsheet->time = global_cpu_time_used;
-                printSpreadsheet(spreadsheet);
-                printf("[%.1f] (Error: Invalid range format: %s)\n", spreadsheet->time, paramStr);
-                return;
-            }
+            strcpy(endRef, colon + 1);
             parseCellReference(startRef, &rStart, &cStart);
             parseCellReference(endRef, &rEnd, &cEnd);
             if (rStart > rEnd || cStart > cEnd) {
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
-                printSpreadsheet(spreadsheet);
                 printf("[%.1f] (Error: Invalid range order: %s (should be top-left:bottom-right).) ", spreadsheet->time, paramStr);
                 return;
             }
@@ -694,7 +823,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
-                printSpreadsheet(spreadsheet);
                 printf("[%.1f] (Error: Advanced formula creates a direct self-reference. Formula rejected.) ", spreadsheet->time);
                 return;
             }
@@ -702,7 +830,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
-                printSpreadsheet(spreadsheet);
                 printf("[%.1f] (Error: Advanced formula would create a cyclic dependency. Formula rejected.) ", spreadsheet->time);
                 return;
             }
@@ -747,7 +874,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
-                printSpreadsheet(spreadsheet);
                 printf("[%.1f] (Error: Unsupported advanced operation '%s'.) ", spreadsheet->time, opStr);
                 return;
             }
@@ -779,7 +905,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
-            printSpreadsheet(spreadsheet);
             printf("[%.1f] (Error: Invalid input format.) ", spreadsheet->time);
             return;
         }
@@ -789,7 +914,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             global_end = clock();
             global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
             spreadsheet->time = global_cpu_time_used;
-            printSpreadsheet(spreadsheet);
             printf("[%.1f] (Error: Target cell out of bounds.) ", spreadsheet->time);
             return;
         }
@@ -797,13 +921,11 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         clearDependencies(targetCell);
 
         int val;
-        /* If rhs starts with '-' and does NOT contain an operator later, treat it as a literal negative */
-        if (rhs[0] == '-' && !(strchr(rhs+1, '+') || strchr(rhs+1, '-') || strchr(rhs+1, '*') || strchr(rhs+1, '/'))) {
+        if (rhs[0] == '-') {
             if (sscanf(rhs + 1, "%d%9s", &val, extra) != 1) {
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
-                printSpreadsheet(spreadsheet);
                 printf("[%.1f] (Error) ", spreadsheet->time);
                 return;
             }
@@ -817,7 +939,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             printSpreadsheet(spreadsheet);
             printf("[%.1f] (ok) ", spreadsheet->time);
         }
-        /* Else if rhs contains a binary operator, handle it as an expression */
         else if (strchr(rhs, '+') || strchr(rhs, '-') || strchr(rhs, '*') || strchr(rhs, '/')) {
             char operand1Str[20], operand2Str[20];
             char opChar;
@@ -825,7 +946,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
-                printSpreadsheet(spreadsheet);
                 printf("[%.1f] (Error: Invalid binary operation format.) ", spreadsheet->time);
                 return;
             }
@@ -839,7 +959,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
-                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Operand cell %s is out of bounds.) ", spreadsheet->time, operand1Str);
                     return;
                 }
@@ -848,7 +967,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
-                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Cyclic dependency detected via operand %s. Formula rejected.) ", spreadsheet->time, operand1Str);
                     return;
                 }
@@ -858,7 +976,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
-                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Invalid literal operand '%s'.) ", spreadsheet->time, operand1Str);
                     return;
                 }
@@ -871,7 +988,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
-                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Operand cell %s is out of bounds.) ", spreadsheet->time, operand2Str);
                     return;
                 }
@@ -880,7 +996,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
-                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Cyclic dependency detected via operand %s. Formula rejected.) ", spreadsheet->time, operand2Str);
                     return;
                 }
@@ -890,13 +1005,12 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
-                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Invalid literal operand '%s'.) ", spreadsheet->time, operand2Str);
                     return;
                 }
                 operand2IsLiteral = 1;
             }
-            
+
             if ((!operand1IsLiteral && operand1->error) ||
                 (!operand2IsLiteral && operand2->error)) {
                 targetCell->error = 1;
@@ -928,7 +1042,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 printf("[%.1f] (ok) ", spreadsheet->time);
                 return;
             }
-            
+
             int result = 0;
             switch (opChar) {
                 case '+': result = (operand1IsLiteral ? literal1 : operand1->value) +
@@ -943,13 +1057,10 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                                  (operand2IsLiteral ? literal2 : operand2->value);
                           targetCell->op = OP_MUL;
                           break;
-                case '/': 
+                case '/':
                           if ((operand2IsLiteral ? literal2 : operand2->value) == 0) {
                               targetCell->error = 1;
                               result = 0;
-                              printSpreadsheet(spreadsheet);
-                              printf("[%.1f] (Error: Division by zero.) ", spreadsheet->time);
-                              return;
                           } else {
                               result = (operand1IsLiteral ? literal1 : operand1->value) /
                                        (operand2IsLiteral ? literal2 : operand2->value);
@@ -961,7 +1072,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                           global_end = clock();
                           global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                           spreadsheet->time = global_cpu_time_used;
-                          printSpreadsheet(spreadsheet);
                           printf("[%.1f] (Error: Unsupported operation '%c'.) ", spreadsheet->time, opChar);
                           return;
             }
@@ -1001,7 +1111,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
-                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Cell reference out of bounds (%s).) ", spreadsheet->time, rhs);
                     return;
                 }
@@ -1010,7 +1119,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
-                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Cyclic dependency detected via direct assignment (%s).) ", spreadsheet->time, rhs);
                     return;
                 }
@@ -1026,7 +1134,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
-                    printSpreadsheet(spreadsheet);
                     printf("[%.1f] (Error: Invalid literal in assignment.) ", spreadsheet->time);
                     return;
                 }
@@ -1049,8 +1156,18 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
     }
 }
 
-/* ---------------- Spreadsheet Initialization & Display ---------------- */
+/*
+   ---------------- Spreadsheet Initialization & Display ----------------
 
+   The code below is responsible for initializing the spreadsheet data structure,
+   setting up the cells, and printing the spreadsheet to the screen.
+*/
+
+/*
+ * initializeSpreadsheet allocates a new Spreadsheet with the specified number of rows and columns.
+ * It allocates a contiguous block of memory for all cells and initializes each cell.
+ * It also sets up the initial capacity for the advanced formulas list.
+ */
 Spreadsheet *initializeSpreadsheet(int rows, int cols) {
     Spreadsheet *spreadsheet = malloc(sizeof(Spreadsheet));
     if (!spreadsheet) {
@@ -1091,6 +1208,10 @@ Spreadsheet *initializeSpreadsheet(int rows, int cols) {
     return spreadsheet;
 }
 
+/*
+ * getColumnLabel generates a column label (like A, B, AA, etc.) based on a zero-indexed column number.
+ * It converts the number into letters and stores the result in the provided buffer.
+ */
 void getColumnLabel(int colIndex, char *label) {
     int i = 0;
     char temp[4];
@@ -1106,6 +1227,11 @@ void getColumnLabel(int colIndex, char *label) {
     label[len] = '\0';
 }
 
+/*
+ * printSpreadsheet prints a portion of the spreadsheet (up to 10 rows and 10 columns)
+ * starting from the current starting row and column.
+ * If output is disabled, it simply returns without printing anything.
+ */
 void printSpreadsheet(Spreadsheet *spreadsheet) {
     if (spreadsheet->display == 1)
         return;
@@ -1131,6 +1257,11 @@ void printSpreadsheet(Spreadsheet *spreadsheet) {
     }
 }
 
+/*
+ * freeSpreadsheet releases all memory allocated for the spreadsheet.
+ * It frees the contiguous block of cells, the table pointer array,
+ * the advanced formulas list, and finally the spreadsheet structure itself.
+ */
 void freeSpreadsheet(Spreadsheet *spreadsheet) {
     if (spreadsheet) {
         if (spreadsheet->table) {

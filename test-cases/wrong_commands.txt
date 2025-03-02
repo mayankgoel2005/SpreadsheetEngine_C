@@ -1,0 +1,24 @@
+disable_output
+A1=B1hello
+A1=helloB1
+A1=B1+5hello
+A1=B1+hello5
+A1=B1+5+hello
+A1=B1+5+5
+A1=B1+5*2
+A1=5hello+B1
+A1=MAXhello(B1:C1)
+A1hello=B1
+A1=B1 + 5
+A1=1-
+A1=B1+
+A1=B1%6
+A1=B1//6
+A20000=20
+A1=MAX(ZZZ999:A2)
+A1=MAX(B1:C1)hello
+A1=MAX(B1:C1) hello
+A1=MAX(B1:C1 hello)
+A1=MAX(B1 hello:C1)
+A1B1=20
+enable_output

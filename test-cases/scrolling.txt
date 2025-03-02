@@ -1,0 +1,21 @@
+disable_output
+d
+d
+s
+a
+w
+s
+a
+d
+enable_output
+disable_output
+scroll_to G50
+d
+d
+d
+s
+s
+w
+a
+d
+enable_output
