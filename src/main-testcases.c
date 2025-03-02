@@ -16,7 +16,7 @@
 #define MIN_VALUE -1000
 #define MAX_VALUE 1000
 
-int n = 20;  // Global variable for the total number of operations
+int n = 120;  // Global variable for the total number of operations
 
 // Function to get Excel-style column name (e.g., A, AB, ZZZ)
 void get_column_letter(int col_num, char *col_letter) {
@@ -119,18 +119,17 @@ void generate_excel_formulas(void) {
                int row_c2, col_c2, row_c3, col_c3;
             do {
              
-               generate_random_cell(c2); // Generate C2
+                generate_random_cell(c2); // Generate C2
                 generate_random_cell(c3); // Generate C3
-             
+                
                 get_cell_coordinates(c2, &row_c2, &col_c2);
                 get_cell_coordinates(c3, &row_c3, &col_c3);
-            } while (!is_bottom_right(row_c2, col_c2, row_c3, col_c3));
+            } while ((!is_bottom_right(row_c2, col_c2, row_c3, col_c3))  || ((row_c2 >= row_c3 + 100  || row_c3 >= row_c2+100) || (col_c2 >= col_c3 + 100  || col_c3 >= col_c2+100)));
 
             int operation = (rand() % 10) + 1;
             char formula[50];
             char formula1[50];
             int sleep_time = (rand() % 3) + 1;
-            
             switch (operation) {
                 case 1: sprintf(formula, "=FLOOR(%s+%s, 1)", c2, c3); break;
                 case 2: sprintf(formula, "=FLOOR(%s-%s, 1)", c2, c3); break;
@@ -142,9 +141,8 @@ void generate_excel_formulas(void) {
                 case 8: sprintf(formula, "=FLOOR(SUM(%s:%s), 1)", c2, c3); break;
                 case 9: sprintf(formula, "=FLOOR(STDEV(%s:%s), 1)", c2, c3); break;
                 case 10: {
+                    worksheet_write_number(worksheet, row, col, sleep_time, NULL);
                     
-                    sprintf(formula, "=%d", sleep_time); // Placeholder (Excel does not support sleep)
-                    break;
                 }
             }
             switch (operation) {
@@ -160,11 +158,12 @@ void generate_excel_formulas(void) {
                 case 10: {
 
                     sprintf(formula1, "=SLEEP(%d)", sleep_time); 
-                    break;
+                
                 }
             }
 
             // Write formula in correct Excel cell
+            if (operation != 10)
             worksheet_write_formula(worksheet, row, col, formula, NULL);
             fprintf(file, "%s%s\n", c1, formula1);
         }

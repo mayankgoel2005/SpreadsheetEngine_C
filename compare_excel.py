@@ -16,8 +16,8 @@ def compare_excel_files(file1, file2):
         # Compare each sheet
         for sheet in df1.keys():
             # Replace #DIV/0! with "err" in both dataframes
-            df1[sheet] = df1[sheet].replace('#DIV/0!', 'err')
-            df2[sheet] = df2[sheet].replace('#DIV/0!', 'err')
+            df1[sheet] = df1[sheet].replace('#DIV/0!', 'ERR')
+            df2[sheet] = df2[sheet].replace('#DIV/0!', 'ERR')
 
             # If the shapes differ, there's an immediate mismatch
             if df1[sheet].shape != df2[sheet].shape:
