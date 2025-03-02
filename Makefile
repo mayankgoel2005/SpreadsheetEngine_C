@@ -3,8 +3,7 @@ CFLAGS = -g -O2 -Wall -Wextra -pedantic -Iinclude -I/opt/homebrew/opt/libxlsxwri
 TARGET = ./target/release/spreadsheet
 #TEST_TARGET = test_sheet
 #LDFLAGS = -L/opt/homebrew/opt/libxlsxwriter/lib -lxlsxwriter -lm
-REPORT_SRC = report.tex
-REPORT_PDF = report.pdf
+
 SRC = src/main.c src/spreadsheet.c src/cell.c src/input_parser.c src/scrolling.c src/avl_tree.c
 OBJ = $(SRC:.c=.o)
 
@@ -27,14 +26,16 @@ $(TARGET): $(OBJ)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-report: $(REPORT_PDF)
-$(REPORT_PDF): $(REPORT_SRC)
-	@pdflatex $(REPORT_SRC)
-	@pdflatex $(REPORT_SRC) # Run twice for proper cross-referencing
-	@rm -f *.aux *.log *.out
-
-
 clean:
-	rm -f $(OBJ) $(TARGET) $(REPORT_PDF) *.aux *.log *.out
+	rm -f $(OBJ) $(TARGET)
 	#rm -f $(OBJ) $(TARGET) $(TEST_OBJ) $(TEST_TARGET)
 
+# Added report target to compile LaTeX file and display the report
+report: report.pdf
+	# On macOS, use 'open'; on Linux, you might use 'xdg-open'
+	open report.pdf
+
+report.pdf: report.tex
+	pdflatex report.tex
+	# Running pdflatex a second time for proper reference resolution (optional)
+	pdflatex report.tex
