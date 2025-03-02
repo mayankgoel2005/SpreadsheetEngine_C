@@ -38,7 +38,6 @@ int main(int argc, char *argv[]) {
 
     Spreadsheet *spreadsheet = initializeSpreadsheet(rows, cols);
 
-    printf("Spreadsheet initialized. Type 'q' to quit.\n");
     printSpreadsheet(spreadsheet);
     printf("[0.0] (ok) ");
 

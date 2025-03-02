@@ -28,8 +28,6 @@
 clock_t global_end;
 double global_cpu_time_used;
 
-/* ---------------- Queue & BFS-based cycle detection ---------------- */
-
 typedef struct Node {
     Cell *cell;
     struct Node *next;
@@ -111,19 +109,10 @@ int existsPath(Cell *source, Cell *target, Spreadsheet *spreadsheet) {
     return found;
 }
 
-/*
- * Add checkCycleNew as a simple wrapper around existsPath.
- * This resolves the undefined reference error.
- */
 int checkCycleNew(Cell *operand, Cell *target, Spreadsheet *spreadsheet) {
     return existsPath(target, operand, spreadsheet);
 }
 
-/* ---------------- Optimized Advanced Formula Cycle Detection ---------------- */
-
-/* Instead of iterating over every cell in the range and doing a BFS for each one,
-   we perform a single BFS starting at the target cell and check if any visited cell
-   falls within the given range. */
 typedef struct {
     Node **head;
     Node **tail;
@@ -180,8 +169,6 @@ int checkAdvancedFormulaCycleNew(Cell *target, int rStart, int cStart, int rEnd,
     return cbData.foundCycle;
 }
 
-/* ---------------- Dependency management ---------------- */
-
 static void remove_dependent_callback(Cell *source, void *target_ptr) {
     Cell *target = (Cell *) target_ptr;
     source->dependents = avl_delete(source->dependents, target, avl_cell_compare);
@@ -202,8 +189,6 @@ void addDependency(Cell *targetCell, Cell *source) {
 void addDependent(Cell *sourceCell, Cell *target) {
     sourceCell->dependents = avl_insert(sourceCell->dependents, target, avl_cell_compare);
 }
-
-/* ---------------- Recalculation functions ---------------- */
 
 void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
     if (cell->op != OP_NONE) {
@@ -322,15 +307,11 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
     }
 }
 
-/* ---------------- Recursive Basic Recalculation ---------------- */
-
 void recalc_basic_recursive(Cell *cell, Spreadsheet *spreadsheet) {
     recalc_cell(cell, spreadsheet);
     if (cell->dependents)
         avl_traverse(cell->dependents, (void (*)(Cell*, void*))recalc_basic_recursive, spreadsheet);
 }
-
-/* ---------------- Topological Recalculation for Advanced Formulas ---------------- */
 
 int findAffectedIndex(Cell **arr, int count, Cell *cell) {
     for (int i = 0; i < count; i++) {
@@ -455,8 +436,6 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     free(zeroQueue);
 }
 
-/* ---------------- Advanced Formula List Management ---------------- */
-
 static void addAdvancedFormula(Spreadsheet *spreadsheet, Cell *cell) {
     for (int i = 0; i < spreadsheet->advancedFormulasCount; i++) {
         if (spreadsheet->advancedFormulas[i] == cell)
@@ -548,8 +527,6 @@ static void recalcAllAdvancedFormulas(Spreadsheet *spreadsheet, clock_t start) {
     free(zeroQueue);
     free(topoOrder);
 }
-
-/* ---------------- Main operation handler ---------------- */
 
 void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start) {
     if (strcmp(input, "disable_output") == 0) {
@@ -1016,8 +993,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         }
     }
 }
-
-/* ---------------- Spreadsheet Initialization & Display ---------------- */
 
 Spreadsheet *initializeSpreadsheet(int rows, int cols) {
     Spreadsheet *spreadsheet = malloc(sizeof(Spreadsheet));
