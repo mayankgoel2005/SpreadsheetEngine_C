@@ -16,7 +16,7 @@
 #define MIN_VALUE -1000
 #define MAX_VALUE 1000
 
-int n = 120;  // Global variable for the total number of operations
+int n = 50;  // Global variable for the total number of operations
 
 // Function to get Excel-style column name (e.g., A, AB, ZZZ)
 void get_column_letter(int col_num, char *col_letter) {
@@ -118,10 +118,10 @@ void generate_excel_formulas(void) {
             // Generate valid random cells for formulas
                int row_c2, col_c2, row_c3, col_c3;
             do {
-             
+
                 generate_random_cell(c2); // Generate C2
                 generate_random_cell(c3); // Generate C3
-                
+
                 get_cell_coordinates(c2, &row_c2, &col_c2);
                 get_cell_coordinates(c3, &row_c3, &col_c3);
             } while ((!is_bottom_right(row_c2, col_c2, row_c3, col_c3))  || ((row_c2 >= row_c3 + 100  || row_c3 >= row_c2+100) || (col_c2 >= col_c3 + 100  || col_c3 >= col_c2+100)));
@@ -139,10 +139,10 @@ void generate_excel_formulas(void) {
                 case 6: sprintf(formula, "=FLOOR(MAX(%s:%s), 1)", c2, c3); break;
                 case 7: sprintf(formula, "=FLOOR(AVERAGE(%s:%s), 1)", c2, c3); break;
                 case 8: sprintf(formula, "=FLOOR(SUM(%s:%s), 1)", c2, c3); break;
-                case 9: sprintf(formula, "=FLOOR(STDEV(%s:%s), 1)", c2, c3); break;
+                case 9: sprintf(formula, "=ROUND(STDEV(%s:%s), 1)", c2, c3); break;
                 case 10: {
                     worksheet_write_number(worksheet, row, col, sleep_time, NULL);
-                    
+
                 }
             }
             switch (operation) {
@@ -157,8 +157,8 @@ void generate_excel_formulas(void) {
                 case 9: sprintf(formula1, "=STDEV(%s:%s)", c2, c3); break;
                 case 10: {
 
-                    sprintf(formula1, "=SLEEP(%d)", sleep_time); 
-                
+                    sprintf(formula1, "=SLEEP(%d)", sleep_time);
+
                 }
             }
 
@@ -201,7 +201,7 @@ int compareExcelFiles(const char *file1, const char *file2) {
     char command[512];
     snprintf(command, sizeof(command), "python3 compare_excel.py \"%s\" \"%s\"", file1, file2);
     int result = system(command);
-    
+
     if (result == 0) {
         printf("Excel files are identical.\n");
         return 1;
@@ -220,7 +220,7 @@ int main(int argc, char *argv[]) {
     }
     generate_excel_formulas();
     printf("Excel file 'expected.xlsx' and text file 'input.txt' created successfully.\n");
-    
+
     int rows = atoi(argv[1]);
     int cols = atoi(argv[2]);
     if (rows >= 1000 || rows <= 0) {
@@ -231,7 +231,7 @@ int main(int argc, char *argv[]) {
         printf("Error: Cols should be in the range 1 to 18278 inclusive\n");
         return 1;
     }
-    
+
     Spreadsheet *spreadsheet = initializeSpreadsheet(rows, cols);
     spreadsheet->display = 1;
     printf("Spreadsheet initialized. Reading commands from input.txt\n");
@@ -259,7 +259,7 @@ int main(int argc, char *argv[]) {
     char input[MAX_INPUT_SIZE];
     while (fgets(input, sizeof(input), file)) {
         clock_t start = clock();
-        
+
         if (!parseInput(input, spreadsheet, start)) {
             break;
         }

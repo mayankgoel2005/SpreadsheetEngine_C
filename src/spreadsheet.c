@@ -28,12 +28,12 @@
 clock_t global_end;
 double global_cpu_time_used;
 
+/* ---------------- Queue & BFS-based cycle detection ---------------- */
+
 typedef struct Node {
     Cell *cell;
     struct Node *next;
 } Node;
-
-int dfs_cycle(Cell *current, Cell *target, Spreadsheet *spreadsheet, int *inStack);
 
 void enqueue(Node **head, Node **tail, Cell *cell) {
     Node *newNode = malloc(sizeof(Node));
@@ -66,7 +66,7 @@ Cell *dequeue(Node **head, Node **tail) {
 typedef struct {
     Node **head;
     Node **tail;
-    int *visited; 
+    int *visited;
     int totalCells;
     Spreadsheet *spreadsheet;
 } BFSData;
@@ -111,101 +111,76 @@ int existsPath(Cell *source, Cell *target, Spreadsheet *spreadsheet) {
     return found;
 }
 
-typedef struct {
-    Cell *target;
-    Spreadsheet *spreadsheet;
-    int *inStack;
-    int found;  
-} DFSContext;
-
-void dfs_dependency_callback(Cell *dep, void *data) {
-    DFSContext *ctx = (DFSContext *) data;
-    if (dfs_cycle(dep, ctx->target, ctx->spreadsheet, ctx->inStack))
-        ctx->found = 1;
+/*
+ * Add checkCycleNew as a simple wrapper around existsPath.
+ * This resolves the undefined reference error.
+ */
+int checkCycleNew(Cell *operand, Cell *target, Spreadsheet *spreadsheet) {
+    return existsPath(target, operand, spreadsheet);
 }
 
-int dfs_cycle(Cell *current, Cell *target, Spreadsheet *spreadsheet, int *inStack) {
-    int index = current->selfRow * spreadsheet->cols + current->selfCol;
-    if (current == target)
-        return 1;  /* Cycle found */
-    if (inStack[index])
-        return 0;  
-    inStack[index] = 1;
-    int found = 0;
-    if (current->dependencies) {
-        DFSContext ctx;
-        ctx.target = target;
-        ctx.spreadsheet = spreadsheet;
-        ctx.inStack = inStack;
-        ctx.found = 0;
-        avl_traverse(current->dependencies, dfs_dependency_callback, &ctx);
-        if (ctx.found)
-            found = 1;
-    }
-    if (!found) {
-        if (current->op == OP_ADD || current->op == OP_SUB ||
-            current->op == OP_MUL || current->op == OP_DIV) {
-            if (current->operand1 && !current->operand1IsLiteral) {
-                if (dfs_cycle(current->operand1, target, spreadsheet, inStack))
-                    found = 1;
-            }
-            if (!found && current->operand2 && !current->operand2IsLiteral) {
-                if (dfs_cycle(current->operand2, target, spreadsheet, inStack))
-                    found = 1;
-            }
-        } else if (current->op >= OP_ADV_SUM && current->op <= OP_ADV_STDEV) {
-            for (int r = current->row1; r <= current->row2 && !found; r++) {
-                for (int c = current->col1; c <= current->col2 && !found; c++) {
-                    if (dfs_cycle(&spreadsheet->table[r][c], target, spreadsheet, inStack))
-                        found = 1;
-                }
-            }
-        }
-    }
-    inStack[index] = 0;
-    return found;
-}
+/* ---------------- Optimized Advanced Formula Cycle Detection ---------------- */
 
-int checkCycle(Cell *source, Cell *target, Spreadsheet *spreadsheet) {
-    int totalCells = spreadsheet->rows * spreadsheet->cols;
-    int *inStack = calloc(totalCells, sizeof(int));
-    if (!inStack) {
-        perror("calloc failed in checkCycle");
-        exit(EXIT_FAILURE);
-    }
-    int cycleFound = dfs_cycle(source, target, spreadsheet, inStack);
-    free(inStack);
-    return cycleFound;
-}
-
-int checkAdvancedFormulaCycle(Cell *target, int rStart, int cStart, int rEnd, int cEnd, Spreadsheet *spreadsheet) {
-    int totalCells = spreadsheet->rows * spreadsheet->cols;
-    int *inStack = calloc(totalCells, sizeof(int));
-    if (!inStack) {
-        perror("calloc failed in DFS cycle check");
-        exit(EXIT_FAILURE);
-    }
-    int cycleFound = 0;
-    for (int r = rStart; r <= rEnd && !cycleFound; r++) {
-        for (int c = cStart; c <= cEnd && !cycleFound; c++) {
-            Cell *curr = &spreadsheet->table[r][c];
-            if (dfs_cycle(curr, target, spreadsheet, inStack))
-                cycleFound = 1;
-        }
-    }
-    free(inStack);
-    return cycleFound;
-}
-
+/* Instead of iterating over every cell in the range and doing a BFS for each one,
+   we perform a single BFS starting at the target cell and check if any visited cell
+   falls within the given range. */
 typedef struct {
     Node **head;
     Node **tail;
-} LLQueueData;
+    int *visited;
+    Spreadsheet *spreadsheet;
+    int rStart, cStart, rEnd, cEnd;
+    int foundCycle;
+} CycleBFSData;
 
-void bfs_enqueue_callback_ll(Cell *cell, void *data) {
-    LLQueueData *qdata = (LLQueueData *) data;
-    enqueue(qdata->head, qdata->tail, cell);
+void bfs_enqueue_if_in_range(Cell *cell, void *data) {
+    CycleBFSData *cbData = (CycleBFSData *) data;
+    int idx = cell->selfRow * cbData->spreadsheet->cols + cell->selfCol;
+    if (!cbData->visited[idx]) {
+        cbData->visited[idx] = 1;
+        /* Check if this cell is within the advanced formula range */
+        if (cell->selfRow >= cbData->rStart && cell->selfRow <= cbData->rEnd &&
+            cell->selfCol >= cbData->cStart && cell->selfCol <= cbData->cEnd) {
+            cbData->foundCycle = 1;
+        }
+        enqueue(cbData->head, cbData->tail, cell);
+    }
 }
+
+int checkAdvancedFormulaCycleNew(Cell *target, int rStart, int cStart, int rEnd, int cEnd, Spreadsheet *spreadsheet) {
+    int totalCells = spreadsheet->rows * spreadsheet->cols;
+    int *visited = calloc(totalCells, sizeof(int));
+    if (!visited) {
+        perror("calloc failed in checkAdvancedFormulaCycleNew");
+        exit(EXIT_FAILURE);
+    }
+    Node *queueHead = NULL, *queueTail = NULL;
+    CycleBFSData cbData;
+    cbData.head = &queueHead;
+    cbData.tail = &queueTail;
+    cbData.visited = visited;
+    cbData.spreadsheet = spreadsheet;
+    cbData.rStart = rStart;
+    cbData.cStart = cStart;
+    cbData.rEnd = rEnd;
+    cbData.cEnd = cEnd;
+    cbData.foundCycle = 0;
+
+    int index = target->selfRow * spreadsheet->cols + target->selfCol;
+    visited[index] = 1;
+    enqueue(&queueHead, &queueTail, target);
+
+    while (queueHead != NULL && !cbData.foundCycle) {
+        Cell *curr = dequeue(&queueHead, &queueTail);
+        if (curr->dependents)
+            avl_traverse(curr->dependents, bfs_enqueue_if_in_range, &cbData);
+    }
+
+    free(visited);
+    return cbData.foundCycle;
+}
+
+/* ---------------- Dependency management ---------------- */
 
 static void remove_dependent_callback(Cell *source, void *target_ptr) {
     Cell *target = (Cell *) target_ptr;
@@ -228,6 +203,8 @@ void addDependent(Cell *sourceCell, Cell *target) {
     sourceCell->dependents = avl_insert(sourceCell->dependents, target, avl_cell_compare);
 }
 
+/* ---------------- Recalculation functions ---------------- */
+
 void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
     if (cell->op != OP_NONE) {
         if (cell->op >= OP_ADV_SUM && cell->op <= OP_ADV_STDEV) {
@@ -243,8 +220,10 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
                         foundError = 1;
                     int val = curr->value;
                     sum += val;
-                    if (val < minVal) minVal = val;
-                    if (val > maxVal) maxVal = val;
+                    if (val < minVal)
+                        minVal = val;
+                    if (val > maxVal)
+                        maxVal = val;
                     count++;
                 }
             }
@@ -254,34 +233,43 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
             }
             int result = 0;
             switch (cell->op) {
-                case OP_ADV_SUM: result = (int) sum; break;
-                case OP_ADV_MIN: result = minVal; break;
-                case OP_ADV_MAX: result = maxVal; break;
-                case OP_ADV_AVG: result = (count > 0) ? (int)(sum / count) : 0; break;
+                case OP_ADV_SUM:
+                    result = (int) sum;
+                    break;
+                case OP_ADV_MIN:
+                    result = minVal;
+                    break;
+                case OP_ADV_MAX:
+                    result = maxVal;
+                    break;
+                case OP_ADV_AVG:
+                    result = (count > 0) ? (int)(sum / count) : 0;
+                    break;
                 case OP_ADV_STDEV: {
-                    if (count <= 1) {  
+                    if (count <= 1) {
                         result = 0;
                         break;
                     }
-                    int sum = 0, mean;
+                    int total = 0, mean;
                     double sqDiffSum = 0.0;
                     for (int r = rStart; r <= rEnd; r++) {
                         for (int c = cStart; c <= cEnd; c++) {
-                            sum += spreadsheet->table[r][c].value;
+                            total += spreadsheet->table[r][c].value;
                         }
                     }
-                    mean = sum / count;
+                    mean = total / count;
                     for (int r = rStart; r <= rEnd; r++) {
                         for (int c = cStart; c <= cEnd; c++) {
                             double diff = spreadsheet->table[r][c].value - mean;
                             sqDiffSum += diff * diff;
                         }
                     }
-                    double stdev = sqrt(sqDiffSum / (count));
-                    result = (int)round(stdev);
+                    double stdev = sqrt(sqDiffSum / count);
+                    result = (int) round(stdev);
                     break;
                 }
-                default: break;
+                default:
+                    break;
             }
             cell->value = result;
             cell->error = 0;
@@ -290,7 +278,6 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
             cell->error = 0;
         }
         else {
-            /* For simple formulas, if an operand is in error, mark the cell as error */
             if ((!cell->operand1IsLiteral && cell->operand1 && cell->operand1->error) ||
                 (!cell->operand2IsLiteral && cell->operand2 && cell->operand2->error)) {
                 cell->error = 1;
@@ -327,7 +314,6 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
         }
     }
     else {
-        /* Direct assignment or reference branch */
         if (!cell->operand1IsLiteral && cell->operand1 != NULL) {
             cell->value = cell->operand1->value;
             cell->error = cell->operand1->error;
@@ -335,6 +321,16 @@ void recalc_cell(Cell *cell, Spreadsheet *spreadsheet) {
         return;
     }
 }
+
+/* ---------------- Recursive Basic Recalculation ---------------- */
+
+void recalc_basic_recursive(Cell *cell, Spreadsheet *spreadsheet) {
+    recalc_cell(cell, spreadsheet);
+    if (cell->dependents)
+        avl_traverse(cell->dependents, (void (*)(Cell*, void*))recalc_basic_recursive, spreadsheet);
+}
+
+/* ---------------- Topological Recalculation for Advanced Formulas ---------------- */
 
 int findAffectedIndex(Cell **arr, int count, Cell *cell) {
     for (int i = 0; i < count; i++) {
@@ -379,6 +375,16 @@ void process_dependent_callback(Cell *dep, void *data) {
     }
 }
 
+typedef struct {
+    Node **head;
+    Node **tail;
+} LLQueueData;
+
+void bfs_enqueue_callback_ll(Cell *cell, void *data) {
+    LLQueueData *qdata = (LLQueueData *) data;
+    enqueue(qdata->head, qdata->tail, cell);
+}
+
 void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     Node *queueHead = NULL, *queueTail = NULL;
     LLQueueData llData;
@@ -392,9 +398,8 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
         exit(EXIT_FAILURE);
     }
 
-    if (start->dependents) {
+    if (start->dependents)
         avl_traverse(start->dependents, bfs_enqueue_callback_ll, &llData);
-    }
     while (queueHead != NULL) {
         Cell *curr = dequeue(&queueHead, &queueTail);
         if (affectedCount >= affectedCapacity) {
@@ -426,9 +431,8 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     int *zeroQueue = malloc(affectedCount * sizeof(int));
     int zeroQueueSize = 0;
     for (int i = 0; i < affectedCount; i++) {
-        if (inDegree[i] == 0) {
+        if (inDegree[i] == 0)
             zeroQueue[zeroQueueSize++] = i;
-        }
     }
 
     ProcessDepData pData;
@@ -450,6 +454,8 @@ void recalcUsingTopoOrder(Cell *start, Spreadsheet *spreadsheet) {
     free(inDegree);
     free(zeroQueue);
 }
+
+/* ---------------- Advanced Formula List Management ---------------- */
 
 static void addAdvancedFormula(Spreadsheet *spreadsheet, Cell *cell) {
     for (int i = 0; i < spreadsheet->advancedFormulasCount; i++) {
@@ -486,7 +492,6 @@ static void recalcAllAdvancedFormulas(Spreadsheet *spreadsheet, clock_t start) {
     for (int i = 0; i < count; i++) {
          inDegree[i] = 0;
     }
-
     for (int i = 0; i < count; i++) {
          Cell *X = spreadsheet->advancedFormulas[i];
          for (int j = 0; j < count; j++) {
@@ -501,9 +506,8 @@ static void recalcAllAdvancedFormulas(Spreadsheet *spreadsheet, clock_t start) {
     int *zeroQueue = malloc(count * sizeof(int));
     int zeroQueueSize = 0;
     for (int i = 0; i < count; i++) {
-         if (inDegree[i] == 0) {
+         if (inDegree[i] == 0)
              zeroQueue[zeroQueueSize++] = i;
-         }
     }
     int processedCount = 0;
     int *topoOrder = malloc(count * sizeof(int));
@@ -519,9 +523,8 @@ static void recalcAllAdvancedFormulas(Spreadsheet *spreadsheet, clock_t start) {
               if (Y->selfRow >= X->row1 && Y->selfRow <= X->row2 &&
                   Y->selfCol >= X->col1 && Y->selfCol <= X->col2) {
                    inDegree[j]--;
-                   if (inDegree[j] == 0) {
+                   if (inDegree[j] == 0)
                         zeroQueue[zeroQueueSize++] = j;
-                   }
               }
          }
     }
@@ -545,6 +548,8 @@ static void recalcAllAdvancedFormulas(Spreadsheet *spreadsheet, clock_t start) {
     free(zeroQueue);
     free(topoOrder);
 }
+
+/* ---------------- Main operation handler ---------------- */
 
 void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start) {
     if (strcmp(input, "disable_output") == 0) {
@@ -647,7 +652,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
             recalcUsingTopoOrder(targetCell, spreadsheet);
             recalcAllAdvancedFormulas(spreadsheet, start);
 
-            /* For negative sleep, display time as 0.0 */
             spreadsheet->time = (result < 0 ? 0.0 : result);
             printSpreadsheet(spreadsheet);
             printf("[%.1f] (ok) ", spreadsheet->time);
@@ -683,7 +687,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 printf("[%.1f] (Error: Advanced formula creates a direct self-reference. Formula rejected.) ", spreadsheet->time);
                 return;
             }
-            if (checkAdvancedFormulaCycle(targetCell, rStart, cStart, rEnd, cEnd, spreadsheet)) {
+            if (checkAdvancedFormulaCycleNew(targetCell, rStart, cStart, rEnd, cEnd, spreadsheet)) {
                 global_end = clock();
                 global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                 spreadsheet->time = global_cpu_time_used;
@@ -696,8 +700,10 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 for (int c = cStart; c <= cEnd; c++) {
                     int val = spreadsheet->table[r][c].value;
                     sum += val;
-                    if (val < minVal) minVal = val;
-                    if (val > maxVal) maxVal = val;
+                    if (val < minVal)
+                        minVal = val;
+                    if (val > maxVal)
+                        maxVal = val;
                     count++;
                 }
             }
@@ -740,9 +746,8 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         targetCell->col1 = cStart;
         targetCell->row2 = rEnd;
         targetCell->col2 = cEnd;
-        if (opCode != OP_SLEEP) {
+        if (opCode != OP_SLEEP)
             addAdvancedFormula(spreadsheet, targetCell);
-        }
 
         recalc_cell(targetCell, spreadsheet);
         recalcUsingTopoOrder(targetCell, spreadsheet);
@@ -777,7 +782,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         clearDependencies(targetCell);
 
         int val;
-        /* Check for unary minus literal */
         if (rhs[0] == '-') {
             if (sscanf(rhs + 1, "%d%9s", &val, extra) != 1) {
                 global_end = clock();
@@ -820,7 +824,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     return;
                 }
                 operand1 = &spreadsheet->table[row1][col1];
-                if (checkCycle(operand1, targetCell, spreadsheet)) {
+                if (checkCycleNew(operand1, targetCell, spreadsheet)) {
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
@@ -849,7 +853,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     return;
                 }
                 operand2 = &spreadsheet->table[row2][col2];
-                if (checkCycle(operand2, targetCell, spreadsheet)) {
+                if (checkCycleNew(operand2, targetCell, spreadsheet)) {
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
@@ -868,7 +872,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 operand2IsLiteral = 1;
             }
 
-            /* --- NEW ERROR-PROPAGATION CHECK --- */
             if ((!operand1IsLiteral && operand1->error) ||
                 (!operand2IsLiteral && operand2->error)) {
                 targetCell->error = 1;
@@ -900,7 +903,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 printf("[%.1f] (ok) ", spreadsheet->time);
                 return;
             }
-            /* --- END NEW CHECK --- */
 
             int result = 0;
             switch (opChar) {
@@ -916,7 +918,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                                  (operand2IsLiteral ? literal2 : operand2->value);
                           targetCell->op = OP_MUL;
                           break;
-                case '/': 
+                case '/':
                           if ((operand2IsLiteral ? literal2 : operand2->value) == 0) {
                               targetCell->error = 1;
                               result = 0;
@@ -952,7 +954,6 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 targetCell->operand2Literal = literal2;
             }
             removeAdvancedFormula(spreadsheet, targetCell);
-            recalc_using_topo:
             recalc_cell(targetCell, spreadsheet);
             recalcUsingTopoOrder(targetCell, spreadsheet);
             recalcAllAdvancedFormulas(spreadsheet, start);
@@ -975,7 +976,7 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                     return;
                 }
                 Cell *source = &spreadsheet->table[row][col];
-                if (checkCycle(source, targetCell, spreadsheet)) {
+                if (checkCycleNew(source, targetCell, spreadsheet)) {
                     global_end = clock();
                     global_cpu_time_used = ((double)(global_end - start)) / CLOCKS_PER_SEC;
                     spreadsheet->time = global_cpu_time_used;
@@ -999,13 +1000,11 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
                 }
                 targetCell->value = val;
                 targetCell->error = 0;
-                /* Clear any stale dependency pointers */
                 targetCell->operand1 = NULL;
                 targetCell->operand2 = NULL;
             }
             targetCell->op = OP_NONE;
             removeAdvancedFormula(spreadsheet, targetCell);
-            /* For direct assignment, recalc the target cell itself */
             recalc_cell(targetCell, spreadsheet);
             recalcUsingTopoOrder(targetCell, spreadsheet);
             recalcAllAdvancedFormulas(spreadsheet, start);
@@ -1017,6 +1016,8 @@ void handleOperation(const char *input, Spreadsheet *spreadsheet, clock_t start)
         }
     }
 }
+
+/* ---------------- Spreadsheet Initialization & Display ---------------- */
 
 Spreadsheet *initializeSpreadsheet(int rows, int cols) {
     Spreadsheet *spreadsheet = malloc(sizeof(Spreadsheet));
@@ -1035,12 +1036,13 @@ Spreadsheet *initializeSpreadsheet(int rows, int cols) {
         perror("Failed to allocate memory for spreadsheet table");
         exit(EXIT_FAILURE);
     }
+    Cell *block = malloc(rows * cols * sizeof(Cell));
+    if (!block) {
+        perror("Failed to allocate contiguous cell block");
+        exit(EXIT_FAILURE);
+    }
     for (int i = 0; i < rows; i++) {
-        spreadsheet->table[i] = malloc(cols * sizeof(Cell));
-        if (!spreadsheet->table[i]) {
-            perror("Failed to allocate memory for a row of cells");
-            exit(EXIT_FAILURE);
-        }
+        spreadsheet->table[i] = block + (i * cols);
         for (int j = 0; j < cols; j++) {
             initCell(&spreadsheet->table[i][j], i, j);
             spreadsheet->table[i][j].selfRow = i;
@@ -1088,24 +1090,23 @@ void printSpreadsheet(Spreadsheet *spreadsheet) {
         printf("%4d", row + 1);
         for (int col = spreadsheet->startCol; col < endCol; col++) {
             Cell *cell = &spreadsheet->table[row][col];
-            if (cell->error) {
+            if (cell->error)
                 printf("%12s", "ERR");
-            } else {
+            else
                 printf("%12d", cell->value);
-            }
         }
         printf("\n");
     }
 }
 
 void freeSpreadsheet(Spreadsheet *spreadsheet) {
-    for (int i = 0; i < spreadsheet->rows; i++) {
-        for (int j = 0; j < spreadsheet->cols; j++) {
-            freeCell(&spreadsheet->table[i][j]);
+    if (spreadsheet) {
+        if (spreadsheet->table) {
+            free(spreadsheet->table[0]);
+            free(spreadsheet->table);
         }
-        free(spreadsheet->table[i]);
+        if (spreadsheet->advancedFormulas)
+            free(spreadsheet->advancedFormulas);
+        free(spreadsheet);
     }
-    free(spreadsheet->table);
-    free(spreadsheet->advancedFormulas);
-    free(spreadsheet);
 }
